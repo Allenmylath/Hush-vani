@@ -1,0 +1,193 @@
+##### enc.onnx  (opset 14)
+# initializers:
+#   erb_conv1.0.weight                     (16, 1, 1, 3)    float32
+#   erb_conv2.0.weight                     (16, 1, 1, 3)    float32
+#   erb_conv3.0.weight                     (16, 1, 1, 3)    float32
+#   df_conv0.1.weight                      (16, 1, 3, 3)    float32
+#   df_conv1.0.weight                      (16, 1, 1, 3)    float32
+#   df_fc_emb.0.weight                     (16, 32, 8)      float32
+#   emb_gru.linear_in.0.weight             (1, 128, 256)    float32
+#   emb_gru.linear_out.0.weight            (1, 256, 128)    float32
+#   lsnr_fc.0.bias                         (1,)             float32  = [-0.036050859838724136]
+#   onnx::Conv_310                         (16, 1, 3, 3)    float32
+#   onnx::Conv_311                         (16,)            float32
+#   onnx::Conv_313                         (16, 16, 1, 1)   float32
+#   onnx::Conv_314                         (16,)            float32
+#   onnx::Conv_316                         (16, 16, 1, 1)   float32
+#   onnx::Conv_317                         (16,)            float32
+#   onnx::Conv_319                         (16, 16, 1, 1)   float32
+#   onnx::Conv_320                         (16,)            float32
+#   onnx::Conv_322                         (16, 16, 1, 1)   float32
+#   onnx::Conv_323                         (16,)            float32
+#   onnx::Conv_325                         (16, 16, 1, 1)   float32
+#   onnx::Conv_326                         (16,)            float32
+#   onnx::GRU_360                          (1, 768, 256)    float32
+#   onnx::GRU_361                          (1, 768, 256)    float32
+#   onnx::GRU_362                          (1, 1536)        float32
+#   onnx::MatMul_365                       (128, 1)         float32
+# graph inputs : ['feat_erb', 'feat_spec']
+# graph outputs: ['e0', 'e1', 'e2', 'e3', 'emb', 'c0', 'lsnr']
+# nodes:
+  0 Constant       [] -> ['/erb_conv0/erb_conv0.0/Constant_output_0'] {'value': [4]}
+  1 Constant       [] -> ['/erb_conv0/erb_conv0.0/Constant_1_output_0'] {'value': [0, 0, 2, 0]}
+  2 ConstantOfShape ['/erb_conv0/erb_conv0.0/Constant_output_0'] -> ['/erb_conv0/erb_conv0.0/ConstantOfShape_output_0'] {'value': [0]}
+  3 Concat         ['/erb_conv0/erb_conv0.0/Constant_1_output_0', '/erb_conv0/erb_conv0.0/ConstantOfShape_output_0'] -> ['/erb_conv0/erb_conv0.0/Concat_output_0'] {'axis': 0}
+  4 Constant       [] -> ['/erb_conv0/erb_conv0.0/Constant_2_output_0'] {'value': [-1, 2]}
+  5 Reshape        ['/erb_conv0/erb_conv0.0/Concat_output_0', '/erb_conv0/erb_conv0.0/Constant_2_output_0'] -> ['/erb_conv0/erb_conv0.0/Reshape_output_0'] {'allowzero': 0}
+  6 Constant       [] -> ['/erb_conv0/erb_conv0.0/Constant_3_output_0'] {'value': [0]}
+  7 Constant       [] -> ['/erb_conv0/erb_conv0.0/Constant_4_output_0'] {'value': [-1]}
+  8 Constant       [] -> ['/erb_conv0/erb_conv0.0/Constant_5_output_0'] {'value': [-9223372036854775807]}
+  9 Constant       [] -> ['/erb_conv0/erb_conv0.0/Constant_6_output_0'] {'value': [-1]}
+ 10 Slice          ['/erb_conv0/erb_conv0.0/Reshape_output_0', '/erb_conv0/erb_conv0.0/Constant_4_output_0', '/erb_conv0/erb_conv0.0/Constant_5_output_0', '/erb_conv0/erb_conv0.0/Constant_3_output_0', '/erb_conv0/erb_conv0.0/Constant_6_output_0'] -> ['/erb_conv0/erb_conv0.0/Slice_output_0']
+ 11 Transpose      ['/erb_conv0/erb_conv0.0/Slice_output_0'] -> ['/erb_conv0/erb_conv0.0/Transpose_output_0'] {'perm': [1, 0]}
+ 12 Constant       [] -> ['/erb_conv0/erb_conv0.0/Constant_7_output_0'] {'value': [-1]}
+ 13 Reshape        ['/erb_conv0/erb_conv0.0/Transpose_output_0', '/erb_conv0/erb_conv0.0/Constant_7_output_0'] -> ['/erb_conv0/erb_conv0.0/Reshape_1_output_0'] {'allowzero': 0}
+ 14 Cast           ['/erb_conv0/erb_conv0.0/Reshape_1_output_0'] -> ['/erb_conv0/erb_conv0.0/Cast_output_0'] {'to': 7}
+ 15 Constant       [] -> ['/erb_conv0/erb_conv0.0/Constant_8_output_0'] {'value': 0.0}
+ 16 Pad            ['feat_erb', '/erb_conv0/erb_conv0.0/Cast_output_0', '/erb_conv0/erb_conv0.0/Constant_8_output_0'] -> ['/erb_conv0/erb_conv0.0/Pad_output_0'] {'mode': 'constant'}
+ 17 Conv           ['/erb_conv0/erb_conv0.0/Pad_output_0', 'onnx::Conv_310', 'onnx::Conv_311'] -> ['/erb_conv0/erb_conv0.1/Conv_output_0'] {'dilations': [1, 1], 'group': 1, 'kernel_shape': [3, 3], 'pads': [0, 1, 0, 1], 'strides': [1, 1]}
+ 18 Relu           ['/erb_conv0/erb_conv0.1/Conv_output_0'] -> ['e0']
+ 19 Conv           ['e0', 'erb_conv1.0.weight'] -> ['/erb_conv1/erb_conv1.0/Conv_output_0'] {'dilations': [1, 1], 'group': 16, 'kernel_shape': [1, 3], 'pads': [0, 1, 0, 1], 'strides': [1, 2]}
+ 20 Conv           ['/erb_conv1/erb_conv1.0/Conv_output_0', 'onnx::Conv_313', 'onnx::Conv_314'] -> ['/erb_conv1/erb_conv1.1/Conv_output_0'] {'dilations': [1, 1], 'group': 1, 'kernel_shape': [1, 1], 'pads': [0, 0, 0, 0], 'strides': [1, 1]}
+ 21 Relu           ['/erb_conv1/erb_conv1.1/Conv_output_0'] -> ['e1']
+ 22 Conv           ['e1', 'erb_conv2.0.weight'] -> ['/erb_conv2/erb_conv2.0/Conv_output_0'] {'dilations': [1, 1], 'group': 16, 'kernel_shape': [1, 3], 'pads': [0, 1, 0, 1], 'strides': [1, 2]}
+ 23 Conv           ['/erb_conv2/erb_conv2.0/Conv_output_0', 'onnx::Conv_316', 'onnx::Conv_317'] -> ['/erb_conv2/erb_conv2.1/Conv_output_0'] {'dilations': [1, 1], 'group': 1, 'kernel_shape': [1, 1], 'pads': [0, 0, 0, 0], 'strides': [1, 1]}
+ 24 Relu           ['/erb_conv2/erb_conv2.1/Conv_output_0'] -> ['e2']
+ 25 Conv           ['e2', 'erb_conv3.0.weight'] -> ['/erb_conv3/erb_conv3.0/Conv_output_0'] {'dilations': [1, 1], 'group': 16, 'kernel_shape': [1, 3], 'pads': [0, 1, 0, 1], 'strides': [1, 1]}
+ 26 Conv           ['/erb_conv3/erb_conv3.0/Conv_output_0', 'onnx::Conv_319', 'onnx::Conv_320'] -> ['/erb_conv3/erb_conv3.1/Conv_output_0'] {'dilations': [1, 1], 'group': 1, 'kernel_shape': [1, 1], 'pads': [0, 0, 0, 0], 'strides': [1, 1]}
+ 27 Relu           ['/erb_conv3/erb_conv3.1/Conv_output_0'] -> ['e3']
+ 28 Constant       [] -> ['/df_conv0/df_conv0.0/Constant_output_0'] {'value': [4]}
+ 29 Constant       [] -> ['/df_conv0/df_conv0.0/Constant_1_output_0'] {'value': [0, 0, 2, 0]}
+ 30 ConstantOfShape ['/df_conv0/df_conv0.0/Constant_output_0'] -> ['/df_conv0/df_conv0.0/ConstantOfShape_output_0'] {'value': [0]}
+ 31 Concat         ['/df_conv0/df_conv0.0/Constant_1_output_0', '/df_conv0/df_conv0.0/ConstantOfShape_output_0'] -> ['/df_conv0/df_conv0.0/Concat_output_0'] {'axis': 0}
+ 32 Constant       [] -> ['/df_conv0/df_conv0.0/Constant_2_output_0'] {'value': [-1, 2]}
+ 33 Reshape        ['/df_conv0/df_conv0.0/Concat_output_0', '/df_conv0/df_conv0.0/Constant_2_output_0'] -> ['/df_conv0/df_conv0.0/Reshape_output_0'] {'allowzero': 0}
+ 34 Constant       [] -> ['/df_conv0/df_conv0.0/Constant_3_output_0'] {'value': [0]}
+ 35 Constant       [] -> ['/df_conv0/df_conv0.0/Constant_4_output_0'] {'value': [-1]}
+ 36 Constant       [] -> ['/df_conv0/df_conv0.0/Constant_5_output_0'] {'value': [-9223372036854775807]}
+ 37 Constant       [] -> ['/df_conv0/df_conv0.0/Constant_6_output_0'] {'value': [-1]}
+ 38 Slice          ['/df_conv0/df_conv0.0/Reshape_output_0', '/df_conv0/df_conv0.0/Constant_4_output_0', '/df_conv0/df_conv0.0/Constant_5_output_0', '/df_conv0/df_conv0.0/Constant_3_output_0', '/df_conv0/df_conv0.0/Constant_6_output_0'] -> ['/df_conv0/df_conv0.0/Slice_output_0']
+ 39 Transpose      ['/df_conv0/df_conv0.0/Slice_output_0'] -> ['/df_conv0/df_conv0.0/Transpose_output_0'] {'perm': [1, 0]}
+ 40 Constant       [] -> ['/df_conv0/df_conv0.0/Constant_7_output_0'] {'value': [-1]}
+ 41 Reshape        ['/df_conv0/df_conv0.0/Transpose_output_0', '/df_conv0/df_conv0.0/Constant_7_output_0'] -> ['/df_conv0/df_conv0.0/Reshape_1_output_0'] {'allowzero': 0}
+ 42 Cast           ['/df_conv0/df_conv0.0/Reshape_1_output_0'] -> ['/df_conv0/df_conv0.0/Cast_output_0'] {'to': 7}
+ 43 Constant       [] -> ['/df_conv0/df_conv0.0/Constant_8_output_0'] {'value': 0.0}
+ 44 Pad            ['feat_spec', '/df_conv0/df_conv0.0/Cast_output_0', '/df_conv0/df_conv0.0/Constant_8_output_0'] -> ['/df_conv0/df_conv0.0/Pad_output_0'] {'mode': 'constant'}
+ 45 Conv           ['/df_conv0/df_conv0.0/Pad_output_0', 'df_conv0.1.weight'] -> ['/df_conv0/df_conv0.1/Conv_output_0'] {'dilations': [1, 1], 'group': 2, 'kernel_shape': [3, 3], 'pads': [0, 1, 0, 1], 'strides': [1, 1]}
+ 46 Conv           ['/df_conv0/df_conv0.1/Conv_output_0', 'onnx::Conv_322', 'onnx::Conv_323'] -> ['/df_conv0/df_conv0.2/Conv_output_0'] {'dilations': [1, 1], 'group': 1, 'kernel_shape': [1, 1], 'pads': [0, 0, 0, 0], 'strides': [1, 1]}
+ 47 Relu           ['/df_conv0/df_conv0.2/Conv_output_0'] -> ['c0']
+ 48 Conv           ['c0', 'df_conv1.0.weight'] -> ['/df_conv1/df_conv1.0/Conv_output_0'] {'dilations': [1, 1], 'group': 16, 'kernel_shape': [1, 3], 'pads': [0, 1, 0, 1], 'strides': [1, 2]}
+ 49 Conv           ['/df_conv1/df_conv1.0/Conv_output_0', 'onnx::Conv_325', 'onnx::Conv_326'] -> ['/df_conv1/df_conv1.1/Conv_output_0'] {'dilations': [1, 1], 'group': 1, 'kernel_shape': [1, 1], 'pads': [0, 0, 0, 0], 'strides': [1, 1]}
+ 50 Relu           ['/df_conv1/df_conv1.1/Conv_output_0'] -> ['/df_conv1/df_conv1.3/Relu_output_0']
+ 51 Transpose      ['/df_conv1/df_conv1.3/Relu_output_0'] -> ['/Transpose_output_0'] {'perm': [0, 2, 3, 1]}
+ 52 Shape          ['/Transpose_output_0'] -> ['/Shape_output_0']
+ 53 Constant       [] -> ['/Constant_output_0'] {'value': [0]}
+ 54 Constant       [] -> ['/Constant_1_output_0'] {'value': [0]}
+ 55 Constant       [] -> ['/Constant_2_output_0'] {'value': [2]}
+ 56 Slice          ['/Shape_output_0', '/Constant_1_output_0', '/Constant_2_output_0', '/Constant_output_0'] -> ['/Slice_output_0']
+ 57 Constant       [] -> ['/Constant_3_output_0'] {'value': [-1]}
+ 58 Concat         ['/Slice_output_0', '/Constant_3_output_0'] -> ['/Concat_output_0'] {'axis': 0}
+ 59 Reshape        ['/Transpose_output_0', '/Concat_output_0'] -> ['/Reshape_output_0'] {'allowzero': 0}
+ 60 Shape          ['/Reshape_output_0'] -> ['/df_fc_emb/df_fc_emb.0/Shape_output_0']
+ 61 Constant       [] -> ['/df_fc_emb/df_fc_emb.0/Constant_output_0'] {'value': 0}
+ 62 Gather         ['/df_fc_emb/df_fc_emb.0/Shape_output_0', '/df_fc_emb/df_fc_emb.0/Constant_output_0'] -> ['/df_fc_emb/df_fc_emb.0/Gather_output_0'] {'axis': 0}
+ 63 Shape          ['/Reshape_output_0'] -> ['/df_fc_emb/df_fc_emb.0/Shape_1_output_0']
+ 64 Constant       [] -> ['/df_fc_emb/df_fc_emb.0/Constant_1_output_0'] {'value': 1}
+ 65 Gather         ['/df_fc_emb/df_fc_emb.0/Shape_1_output_0', '/df_fc_emb/df_fc_emb.0/Constant_1_output_0'] -> ['/df_fc_emb/df_fc_emb.0/Gather_1_output_0'] {'axis': 0}
+ 66 Constant       [] -> ['onnx::Unsqueeze_140'] {'value': [0]}
+ 67 Unsqueeze      ['/df_fc_emb/df_fc_emb.0/Gather_output_0', 'onnx::Unsqueeze_140'] -> ['/df_fc_emb/df_fc_emb.0/Unsqueeze_output_0']
+ 68 Constant       [] -> ['onnx::Unsqueeze_142'] {'value': [0]}
+ 69 Unsqueeze      ['/df_fc_emb/df_fc_emb.0/Gather_1_output_0', 'onnx::Unsqueeze_142'] -> ['/df_fc_emb/df_fc_emb.0/Unsqueeze_1_output_0']
+ 70 Constant       [] -> ['/df_fc_emb/df_fc_emb.0/Constant_2_output_0'] {'value': [16]}
+ 71 Constant       [] -> ['/df_fc_emb/df_fc_emb.0/Constant_3_output_0'] {'value': [32]}
+ 72 Concat         ['/df_fc_emb/df_fc_emb.0/Unsqueeze_output_0', '/df_fc_emb/df_fc_emb.0/Unsqueeze_1_output_0', '/df_fc_emb/df_fc_emb.0/Constant_2_output_0', '/df_fc_emb/df_fc_emb.0/Constant_3_output_0'] -> ['/df_fc_emb/df_fc_emb.0/Concat_output_0'] {'axis': 0}
+ 73 Reshape        ['/Reshape_output_0', '/df_fc_emb/df_fc_emb.0/Concat_output_0'] -> ['/df_fc_emb/df_fc_emb.0/Reshape_output_0'] {'allowzero': 0}
+ 74 Einsum         ['/df_fc_emb/df_fc_emb.0/Reshape_output_0', 'df_fc_emb.0.weight'] -> ['/df_fc_emb/df_fc_emb.0/Einsum_output_0'] {'equation': 'btgi,gih->btgh'}
+ 75 Shape          ['/df_fc_emb/df_fc_emb.0/Einsum_output_0'] -> ['/df_fc_emb/df_fc_emb.0/Shape_2_output_0']
+ 76 Constant       [] -> ['/df_fc_emb/df_fc_emb.0/Constant_4_output_0'] {'value': [0]}
+ 77 Constant       [] -> ['/df_fc_emb/df_fc_emb.0/Constant_5_output_0'] {'value': [0]}
+ 78 Constant       [] -> ['/df_fc_emb/df_fc_emb.0/Constant_6_output_0'] {'value': [2]}
+ 79 Slice          ['/df_fc_emb/df_fc_emb.0/Shape_2_output_0', '/df_fc_emb/df_fc_emb.0/Constant_5_output_0', '/df_fc_emb/df_fc_emb.0/Constant_6_output_0', '/df_fc_emb/df_fc_emb.0/Constant_4_output_0'] -> ['/df_fc_emb/df_fc_emb.0/Slice_output_0']
+ 80 Constant       [] -> ['/df_fc_emb/df_fc_emb.0/Constant_7_output_0'] {'value': [-1]}
+ 81 Concat         ['/df_fc_emb/df_fc_emb.0/Slice_output_0', '/df_fc_emb/df_fc_emb.0/Constant_7_output_0'] -> ['/df_fc_emb/df_fc_emb.0/Concat_1_output_0'] {'axis': 0}
+ 82 Reshape        ['/df_fc_emb/df_fc_emb.0/Einsum_output_0', '/df_fc_emb/df_fc_emb.0/Concat_1_output_0'] -> ['/df_fc_emb/df_fc_emb.0/Reshape_1_output_0'] {'allowzero': 0}
+ 83 Relu           ['/df_fc_emb/df_fc_emb.0/Reshape_1_output_0'] -> ['/df_fc_emb/df_fc_emb.1/Relu_output_0']
+ 84 Transpose      ['e3'] -> ['/Transpose_1_output_0'] {'perm': [0, 2, 3, 1]}
+ 85 Shape          ['/Transpose_1_output_0'] -> ['/Shape_1_output_0']
+ 86 Constant       [] -> ['/Constant_4_output_0'] {'value': [0]}
+ 87 Constant       [] -> ['/Constant_5_output_0'] {'value': [0]}
+ 88 Constant       [] -> ['/Constant_6_output_0'] {'value': [2]}
+ 89 Slice          ['/Shape_1_output_0', '/Constant_5_output_0', '/Constant_6_output_0', '/Constant_4_output_0'] -> ['/Slice_1_output_0']
+ 90 Constant       [] -> ['/Constant_7_output_0'] {'value': [-1]}
+ 91 Concat         ['/Slice_1_output_0', '/Constant_7_output_0'] -> ['/Concat_1_output_0'] {'axis': 0}
+ 92 Reshape        ['/Transpose_1_output_0', '/Concat_1_output_0'] -> ['/Reshape_1_output_0'] {'allowzero': 0}
+ 93 Add            ['/Reshape_1_output_0', '/df_fc_emb/df_fc_emb.1/Relu_output_0'] -> ['/combine/Add_output_0']
+ 94 Shape          ['/combine/Add_output_0'] -> ['/emb_gru/linear_in/linear_in.0/Shape_output_0']
+ 95 Constant       [] -> ['/emb_gru/linear_in/linear_in.0/Constant_output_0'] {'value': 0}
+ 96 Gather         ['/emb_gru/linear_in/linear_in.0/Shape_output_0', '/emb_gru/linear_in/linear_in.0/Constant_output_0'] -> ['/emb_gru/linear_in/linear_in.0/Gather_output_0'] {'axis': 0}
+ 97 Shape          ['/combine/Add_output_0'] -> ['/emb_gru/linear_in/linear_in.0/Shape_1_output_0']
+ 98 Constant       [] -> ['/emb_gru/linear_in/linear_in.0/Constant_1_output_0'] {'value': 1}
+ 99 Gather         ['/emb_gru/linear_in/linear_in.0/Shape_1_output_0', '/emb_gru/linear_in/linear_in.0/Constant_1_output_0'] -> ['/emb_gru/linear_in/linear_in.0/Gather_1_output_0'] {'axis': 0}
+100 Constant       [] -> ['onnx::Unsqueeze_177'] {'value': [0]}
+101 Unsqueeze      ['/emb_gru/linear_in/linear_in.0/Gather_output_0', 'onnx::Unsqueeze_177'] -> ['/emb_gru/linear_in/linear_in.0/Unsqueeze_output_0']
+102 Constant       [] -> ['onnx::Unsqueeze_179'] {'value': [0]}
+103 Unsqueeze      ['/emb_gru/linear_in/linear_in.0/Gather_1_output_0', 'onnx::Unsqueeze_179'] -> ['/emb_gru/linear_in/linear_in.0/Unsqueeze_1_output_0']
+104 Constant       [] -> ['/emb_gru/linear_in/linear_in.0/Constant_2_output_0'] {'value': [1]}
+105 Constant       [] -> ['/emb_gru/linear_in/linear_in.0/Constant_3_output_0'] {'value': [128]}
+106 Concat         ['/emb_gru/linear_in/linear_in.0/Unsqueeze_output_0', '/emb_gru/linear_in/linear_in.0/Unsqueeze_1_output_0', '/emb_gru/linear_in/linear_in.0/Constant_2_output_0', '/emb_gru/linear_in/linear_in.0/Constant_3_output_0'] -> ['/emb_gru/linear_in/linear_in.0/Concat_output_0'] {'axis': 0}
+107 Reshape        ['/combine/Add_output_0', '/emb_gru/linear_in/linear_in.0/Concat_output_0'] -> ['/emb_gru/linear_in/linear_in.0/Reshape_output_0'] {'allowzero': 0}
+108 Einsum         ['/emb_gru/linear_in/linear_in.0/Reshape_output_0', 'emb_gru.linear_in.0.weight'] -> ['/emb_gru/linear_in/linear_in.0/Einsum_output_0'] {'equation': 'btgi,gih->btgh'}
+109 Shape          ['/emb_gru/linear_in/linear_in.0/Einsum_output_0'] -> ['/emb_gru/linear_in/linear_in.0/Shape_2_output_0']
+110 Constant       [] -> ['/emb_gru/linear_in/linear_in.0/Constant_4_output_0'] {'value': [0]}
+111 Constant       [] -> ['/emb_gru/linear_in/linear_in.0/Constant_5_output_0'] {'value': [0]}
+112 Constant       [] -> ['/emb_gru/linear_in/linear_in.0/Constant_6_output_0'] {'value': [2]}
+113 Slice          ['/emb_gru/linear_in/linear_in.0/Shape_2_output_0', '/emb_gru/linear_in/linear_in.0/Constant_5_output_0', '/emb_gru/linear_in/linear_in.0/Constant_6_output_0', '/emb_gru/linear_in/linear_in.0/Constant_4_output_0'] -> ['/emb_gru/linear_in/linear_in.0/Slice_output_0']
+114 Constant       [] -> ['/emb_gru/linear_in/linear_in.0/Constant_7_output_0'] {'value': [-1]}
+115 Concat         ['/emb_gru/linear_in/linear_in.0/Slice_output_0', '/emb_gru/linear_in/linear_in.0/Constant_7_output_0'] -> ['/emb_gru/linear_in/linear_in.0/Concat_1_output_0'] {'axis': 0}
+116 Reshape        ['/emb_gru/linear_in/linear_in.0/Einsum_output_0', '/emb_gru/linear_in/linear_in.0/Concat_1_output_0'] -> ['/emb_gru/linear_in/linear_in.0/Reshape_1_output_0'] {'allowzero': 0}
+117 Relu           ['/emb_gru/linear_in/linear_in.0/Reshape_1_output_0'] -> ['/emb_gru/linear_in/linear_in.1/Relu_output_0']
+118 Shape          ['/emb_gru/linear_in/linear_in.1/Relu_output_0'] -> ['/emb_gru/gru/Shape_output_0']
+119 Constant       [] -> ['/emb_gru/gru/Constant_output_0'] {'value': 0}
+120 Gather         ['/emb_gru/gru/Shape_output_0', '/emb_gru/gru/Constant_output_0'] -> ['/emb_gru/gru/Gather_output_0'] {'axis': 0}
+121 Constant       [] -> ['/emb_gru/gru/Constant_1_output_0'] {'value': [1]}
+122 Constant       [] -> ['onnx::Unsqueeze_203'] {'value': [0]}
+123 Unsqueeze      ['/emb_gru/gru/Gather_output_0', 'onnx::Unsqueeze_203'] -> ['/emb_gru/gru/Unsqueeze_output_0']
+124 Constant       [] -> ['/emb_gru/gru/Constant_2_output_0'] {'value': [256]}
+125 Concat         ['/emb_gru/gru/Constant_1_output_0', '/emb_gru/gru/Unsqueeze_output_0', '/emb_gru/gru/Constant_2_output_0'] -> ['/emb_gru/gru/Concat_output_0'] {'axis': 0}
+126 ConstantOfShape ['/emb_gru/gru/Concat_output_0'] -> ['/emb_gru/gru/ConstantOfShape_output_0'] {'value': [0.0]}
+127 Transpose      ['/emb_gru/linear_in/linear_in.1/Relu_output_0'] -> ['/emb_gru/gru/Transpose_output_0'] {'perm': [1, 0, 2]}
+128 GRU            ['/emb_gru/gru/Transpose_output_0', 'onnx::GRU_360', 'onnx::GRU_361', 'onnx::GRU_362', '', '/emb_gru/gru/ConstantOfShape_output_0'] -> ['/emb_gru/gru/GRU_output_0', '/emb_gru/gru/GRU_output_1'] {'hidden_size': 256, 'linear_before_reset': 1}
+129 Constant       [] -> ['/emb_gru/gru/Constant_3_output_0'] {'value': [1]}
+130 Squeeze        ['/emb_gru/gru/GRU_output_0', '/emb_gru/gru/Constant_3_output_0'] -> ['/emb_gru/gru/Squeeze_output_0']
+131 Transpose      ['/emb_gru/gru/Squeeze_output_0'] -> ['/emb_gru/gru/Transpose_1_output_0'] {'perm': [1, 0, 2]}
+132 Shape          ['/emb_gru/gru/Transpose_1_output_0'] -> ['/emb_gru/linear_out/linear_out.0/Shape_output_0']
+133 Constant       [] -> ['/emb_gru/linear_out/linear_out.0/Constant_output_0'] {'value': 0}
+134 Gather         ['/emb_gru/linear_out/linear_out.0/Shape_output_0', '/emb_gru/linear_out/linear_out.0/Constant_output_0'] -> ['/emb_gru/linear_out/linear_out.0/Gather_output_0'] {'axis': 0}
+135 Shape          ['/emb_gru/gru/Transpose_1_output_0'] -> ['/emb_gru/linear_out/linear_out.0/Shape_1_output_0']
+136 Constant       [] -> ['/emb_gru/linear_out/linear_out.0/Constant_1_output_0'] {'value': 1}
+137 Gather         ['/emb_gru/linear_out/linear_out.0/Shape_1_output_0', '/emb_gru/linear_out/linear_out.0/Constant_1_output_0'] -> ['/emb_gru/linear_out/linear_out.0/Gather_1_output_0'] {'axis': 0}
+138 Constant       [] -> ['onnx::Unsqueeze_281'] {'value': [0]}
+139 Unsqueeze      ['/emb_gru/linear_out/linear_out.0/Gather_output_0', 'onnx::Unsqueeze_281'] -> ['/emb_gru/linear_out/linear_out.0/Unsqueeze_output_0']
+140 Constant       [] -> ['onnx::Unsqueeze_283'] {'value': [0]}
+141 Unsqueeze      ['/emb_gru/linear_out/linear_out.0/Gather_1_output_0', 'onnx::Unsqueeze_283'] -> ['/emb_gru/linear_out/linear_out.0/Unsqueeze_1_output_0']
+142 Constant       [] -> ['/emb_gru/linear_out/linear_out.0/Constant_2_output_0'] {'value': [1]}
+143 Constant       [] -> ['/emb_gru/linear_out/linear_out.0/Constant_3_output_0'] {'value': [256]}
+144 Concat         ['/emb_gru/linear_out/linear_out.0/Unsqueeze_output_0', '/emb_gru/linear_out/linear_out.0/Unsqueeze_1_output_0', '/emb_gru/linear_out/linear_out.0/Constant_2_output_0', '/emb_gru/linear_out/linear_out.0/Constant_3_output_0'] -> ['/emb_gru/linear_out/linear_out.0/Concat_output_0'] {'axis': 0}
+145 Reshape        ['/emb_gru/gru/Transpose_1_output_0', '/emb_gru/linear_out/linear_out.0/Concat_output_0'] -> ['/emb_gru/linear_out/linear_out.0/Reshape_output_0'] {'allowzero': 0}
+146 Einsum         ['/emb_gru/linear_out/linear_out.0/Reshape_output_0', 'emb_gru.linear_out.0.weight'] -> ['/emb_gru/linear_out/linear_out.0/Einsum_output_0'] {'equation': 'btgi,gih->btgh'}
+147 Shape          ['/emb_gru/linear_out/linear_out.0/Einsum_output_0'] -> ['/emb_gru/linear_out/linear_out.0/Shape_2_output_0']
+148 Constant       [] -> ['/emb_gru/linear_out/linear_out.0/Constant_4_output_0'] {'value': [0]}
+149 Constant       [] -> ['/emb_gru/linear_out/linear_out.0/Constant_5_output_0'] {'value': [0]}
+150 Constant       [] -> ['/emb_gru/linear_out/linear_out.0/Constant_6_output_0'] {'value': [2]}
+151 Slice          ['/emb_gru/linear_out/linear_out.0/Shape_2_output_0', '/emb_gru/linear_out/linear_out.0/Constant_5_output_0', '/emb_gru/linear_out/linear_out.0/Constant_6_output_0', '/emb_gru/linear_out/linear_out.0/Constant_4_output_0'] -> ['/emb_gru/linear_out/linear_out.0/Slice_output_0']
+152 Constant       [] -> ['/emb_gru/linear_out/linear_out.0/Constant_7_output_0'] {'value': [-1]}
+153 Concat         ['/emb_gru/linear_out/linear_out.0/Slice_output_0', '/emb_gru/linear_out/linear_out.0/Constant_7_output_0'] -> ['/emb_gru/linear_out/linear_out.0/Concat_1_output_0'] {'axis': 0}
+154 Reshape        ['/emb_gru/linear_out/linear_out.0/Einsum_output_0', '/emb_gru/linear_out/linear_out.0/Concat_1_output_0'] -> ['/emb_gru/linear_out/linear_out.0/Reshape_1_output_0'] {'allowzero': 0}
+155 Relu           ['/emb_gru/linear_out/linear_out.0/Reshape_1_output_0'] -> ['emb']
+156 MatMul         ['emb', 'onnx::MatMul_365'] -> ['/lsnr_fc/lsnr_fc.0/MatMul_output_0']
+157 Add            ['lsnr_fc.0.bias', '/lsnr_fc/lsnr_fc.0/MatMul_output_0'] -> ['/lsnr_fc/lsnr_fc.0/Add_output_0']
+158 Sigmoid        ['/lsnr_fc/lsnr_fc.0/Add_output_0'] -> ['/lsnr_fc/lsnr_fc.1/Sigmoid_output_0']
+159 Constant       [] -> ['/Constant_8_output_0'] {'value': 50.0}
+160 Mul            ['/lsnr_fc/lsnr_fc.1/Sigmoid_output_0', '/Constant_8_output_0'] -> ['/Mul_output_0']
+161 Constant       [] -> ['/Constant_9_output_0'] {'value': -15.0}
+162 Add            ['/Mul_output_0', '/Constant_9_output_0'] -> ['lsnr']

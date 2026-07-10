@@ -1,0 +1,14 @@
+# Rust
+target/
+
+# Python
+__pycache__/
+*.pyc
+
+# Generated artifacts (regenerate with tools/, see README).
+# The model weights are not redistributed here; they belong to weya-ai/hush.
+hush-vani/assets/
+
+# Downloaded from Hugging Face, not ours to vendor.
+ort/bundle/
+ort/onnx.tar.gz

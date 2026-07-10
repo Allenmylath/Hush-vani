@@ -1,0 +1,18 @@
+fn main() {
+    println!("compile-time target features:");
+    for f in ["sse2", "avx", "avx2", "fma", "avx512f"] {
+        let on = match f {
+            "sse2" => cfg!(target_feature = "sse2"),
+            "avx" => cfg!(target_feature = "avx"),
+            "avx2" => cfg!(target_feature = "avx2"),
+            "fma" => cfg!(target_feature = "fma"),
+            "avx512f" => cfg!(target_feature = "avx512f"),
+            _ => false,
+        };
+        println!("  {f:8} {}", if on { "YES" } else { "no" });
+    }
+    println!("runtime detected:");
+    println!("  avx2 {}", is_x86_feature_detected!("avx2"));
+    println!("  fma  {}", is_x86_feature_detected!("fma"));
+    println!("  avx512f {}", is_x86_feature_detected!("avx512f"));
+}

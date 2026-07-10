@@ -1,0 +1,67 @@
+[package]
+name = "hush-vani"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+description = "Speech enhancement and background-speaker suppression (DeepFilterNet3-style), pure Rust with runtime-dispatched AVX2 kernels. No ONNX runtime, no BLAS."
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["audio", "speech", "denoise", "dsp", "vad"]
+categories = ["multimedia::audio", "algorithms"]
+repository = "https://github.com/Allenmylath/Hush-vani"
+
+# Ship only source. assets/ is 15 MB of weights and test fixtures, and the weights carry
+# the upstream model's license -- users generate them with tools/export_weights.py.
+include = ["src/**/*.rs", "Cargo.toml", "README.md", "LICENSE*"]
+
+autobins = false
+
+[features]
+default = ["cli"]
+# The `hush-vani` binary (wav I/O).
+cli = ["dep:hound"]
+# Verification + benchmark binaries. Need assets/; not usable from crates.io.
+devtools = ["cli"]
+
+[dependencies]
+rustfft = "6.2"
+hound = { version = "3.5", optional = true }
+
+[lib]
+name = "hush_vani"
+path = "src/lib.rs"
+
+[[bin]]
+name = "hush-vani"
+path = "src/bin/cli.rs"
+required-features = ["cli"]
+
+[[bin]]
+name = "hush-devtool"
+path = "src/bin/devtool.rs"
+required-features = ["devtools"]
+
+[[bin]]
+name = "hush-profile"
+path = "src/bin/profile.rs"
+required-features = ["devtools"]
+
+[[bin]]
+name = "hush-kernel-ab"
+path = "src/bin/kernel_ab.rs"
+required-features = ["devtools"]
+
+[[bin]]
+name = "hush-micro"
+path = "src/bin/micro.rs"
+required-features = ["devtools"]
+
+[[bin]]
+name = "hush-features"
+path = "src/bin/features.rs"
+required-features = ["devtools"]
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1

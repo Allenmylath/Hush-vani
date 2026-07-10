@@ -1,0 +1,22 @@
+{
+  "model_type": "hush",
+  "architectures": ["DfNetSE"],
+  "sample_rate": 16000,
+  "fft_size": 320,
+  "hop_size": 160,
+  "nb_erb": 32,
+  "nb_df": 64,
+  "df_order": 5,
+  "df_lookahead": 0,
+  "emb_hidden_dim": 256,
+  "df_hidden_dim": 256,
+  "conv_ch": 16,
+  "conv_depthwise": true,
+  "df_num_layers": 3,
+  "emb_num_layers": 2,
+  "norm_tau": 1.0,
+  "num_params_approx": "1.8M",
+  "model_size_mb": 8,
+  "license": "apache-2.0",
+  "github_repo": "https://github.com/pulp-vision/Hush"
+}
