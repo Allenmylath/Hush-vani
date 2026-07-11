@@ -1,11 +1,11 @@
-//! Development tool: correctness against the ONNX Runtime fixtures, and benchmarks.
+﻿//! Development tool: correctness against the ONNX Runtime fixtures, and benchmarks.
 //! Requires `assets/` (weights + fixtures); not shipped in the published crate.
 
-use hush_vani::dsp::*;
-use hush_vani::model::Model;
-use hush_vani::weights::Weights;
-use hush_vani::Hush;
+use hush_vani::{Decoders, Encoder, Hush};
+use hush_vani_core::dsp::*;
+use hush_vani_core::Weights;
 use rustfft::num_complex::Complex32;
+use std::sync::Arc;
 use std::time::Instant;
 
 fn assets(name: &str) -> String {
@@ -17,9 +17,20 @@ fn load_bin(name: &str) -> Vec<f32> {
     raw.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
 }
 
-fn load_model() -> Model {
-    Model::new(Weights::from_paths(assets("weights.bin"), assets("weights.txt")).expect("weights"))
-        .expect("model")
+/// The two stages, built over one shared weight arena.
+struct Net {
+    enc: Encoder,
+    dec: Decoders,
+}
+
+fn load_model() -> Net {
+    let w = Arc::new(
+        Weights::from_paths(assets("weights.bin"), assets("weights.txt")).expect("weights"),
+    );
+    Net {
+        enc: Encoder::new(Arc::clone(&w)).expect("encoder"),
+        dec: Decoders::new(w).expect("decoders"),
+    }
 }
 
 fn read_wav(path: &str) -> (Vec<f32>, u32) {
@@ -40,7 +51,7 @@ struct Timing {
 }
 
 /// `par`: run erb_dec and df_dec concurrently. They share only `emb`.
-fn enhance(m: &Model, audio: &[f32], par: bool) -> (Vec<f32>, Timing) {
+fn enhance(m: &Net, audio: &[f32], par: bool) -> (Vec<f32>, Timing) {
     let mut d = Dsp::new();
     let t = audio.len() / HOP;
 
@@ -51,18 +62,18 @@ fn enhance(m: &Model, audio: &[f32], par: bool) -> (Vec<f32>, Timing) {
     let dsp_ms = t0.elapsed().as_secs_f64() * 1e3;
 
     let t0 = Instant::now();
-    let e = m.enc(&feat_erb, &feat_spec, t);
+    let e = m.enc.encode(&feat_erb, &feat_spec, t);
     let enc_ms = t0.elapsed().as_secs_f64() * 1e3;
 
     let t0 = Instant::now();
     let (mask, coefs) = if par {
         std::thread::scope(|s| {
-            let h = s.spawn(|| m.erb_dec(&e, t));
-            let c = m.df_dec(&e, t);
+            let h = s.spawn(|| m.dec.erb_dec(&e, t));
+            let c = m.dec.df_dec(&e, t);
             (h.join().unwrap(), c)
         })
     } else {
-        (m.erb_dec(&e, t), m.df_dec(&e, t))
+        (m.dec.erb_dec(&e, t), m.dec.df_dec(&e, t))
     };
     let dec_ms = t0.elapsed().as_secs_f64() * 1e3;
 
@@ -123,14 +134,14 @@ fn cmd_verify() {
     println!("  feat_erb    max|diff| = {:.3e}", maxdiff(&feat_erb, &load_bin("feat_erb.bin")));
     println!("  feat_spec   max|diff| = {:.3e}", maxdiff(&feat_spec, &load_bin("feat_spec.bin")));
 
-    let e = m.enc(&feat_erb, &feat_spec, t);
+    let e = m.enc.encode(&feat_erb, &feat_spec, t);
     println!("NN vs onnxruntime:");
     for (n, v) in [("e0", &e.e0), ("e1", &e.e1), ("e2", &e.e2), ("e3", &e.e3), ("c0", &e.c0),
                    ("emb", &e.emb), ("lsnr", &e.lsnr)] {
         println!("  {n:11} max|diff| = {:.3e}", maxdiff(v, &load_bin(&format!("{n}.bin"))));
     }
-    println!("  {:11} max|diff| = {:.3e}", "mask", maxdiff(&m.erb_dec(&e, t), &load_bin("mask.bin")));
-    println!("  {:11} max|diff| = {:.3e}", "coefs", maxdiff(&m.df_dec(&e, t), &load_bin("coefs.bin")));
+    println!("  {:11} max|diff| = {:.3e}", "mask", maxdiff(&m.dec.erb_dec(&e, t), &load_bin("mask.bin")));
+    println!("  {:11} max|diff| = {:.3e}", "coefs", maxdiff(&m.dec.df_dec(&e, t), &load_bin("coefs.bin")));
 
     let (out, _) = enhance(&m, &audio, false);
     let refa = load_bin("enhanced.bin");
@@ -194,15 +205,15 @@ fn cmd_raw(secs: usize, reps: usize, threads: usize, nn_only: bool) {
         let feat_erb = d.erb_feat(&spec, t);
         let feat_spec = d.spec_feat(&spec, t);
         let nn = |par: bool| {
-            let e = m.enc(&feat_erb, &feat_spec, t);
+            let e = m.enc.encode(&feat_erb, &feat_spec, t);
             if par {
                 std::thread::scope(|s| {
-                    let h = s.spawn(|| m.erb_dec(&e, t));
-                    let c = m.df_dec(&e, t);
+                    let h = s.spawn(|| m.dec.erb_dec(&e, t));
+                    let c = m.dec.df_dec(&e, t);
                     (h.join().unwrap(), c)
                 })
             } else {
-                (m.erb_dec(&e, t), m.df_dec(&e, t))
+                (m.dec.erb_dec(&e, t), m.dec.df_dec(&e, t))
             }
         };
         for _ in 0..3 {
@@ -238,3 +249,4 @@ fn main() {
         _ => eprintln!("usage: hush-devtool [verify | bench [secs] | raw <secs> <reps> <threads> [nn]]"),
     }
 }
+

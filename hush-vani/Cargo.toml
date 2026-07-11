@@ -24,6 +24,7 @@ cli = ["dep:hound"]
 devtools = ["cli"]
 
 [dependencies]
+hush-vani-core = { version = "0.1.0", path = "../hush-vani-core" }
 rustfft = "6.2"
 hound = { version = "3.5", optional = true }
 
@@ -61,7 +62,4 @@ name = "hush-features"
 path = "src/bin/features.rs"
 required-features = ["devtools"]
 
-[profile.release]
-opt-level = 3
-lto = "fat"
-codegen-units = 1
+# profile.release lives in the workspace root Cargo.toml (a member's copy is ignored).

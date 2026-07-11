@@ -60,12 +60,14 @@ impl Weights {
         Self::from_bytes(&raw, &txt)
     }
 
-    pub(crate) fn get(&self, name: &str) -> Result<&[f32], Error> {
+    /// A tensor's data by name, or [`Error::MissingTensor`].
+    pub fn get(&self, name: &str) -> Result<&[f32], Error> {
         let (_, off, len) = self.map.get(name).ok_or_else(|| Error::MissingTensor(name.into()))?;
         Ok(&self.data[*off..*off + *len])
     }
 
-    pub(crate) fn shape(&self, name: &str) -> Result<&[usize], Error> {
+    /// A tensor's shape by name, or [`Error::MissingTensor`].
+    pub fn shape(&self, name: &str) -> Result<&[usize], Error> {
         Ok(&self.map.get(name).ok_or_else(|| Error::MissingTensor(name.into()))?.0)
     }
 }

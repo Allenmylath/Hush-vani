@@ -1,0 +1,15 @@
+[package]
+name = "hush-vani-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+description = "Core DSP, neural kernels, and encoder for hush-vani speech enhancement. Runtime-dispatched AVX2, no ONNX runtime, no BLAS."
+license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/Allenmylath/Hush-vani"
+keywords = ["audio", "speech", "denoise", "dsp", "simd"]
+categories = ["multimedia::audio", "algorithms"]
+include = ["src/**/*.rs", "Cargo.toml", "README.md", "LICENSE*"]
+
+[dependencies]
+rustfft = "6.2"

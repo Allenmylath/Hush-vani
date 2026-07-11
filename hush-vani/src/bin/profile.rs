@@ -1,6 +1,6 @@
 ﻿//! Where does NN time actually go? Times each kernel at the shapes the model uses.
-use hush_vani::alloc::AlignedVec;
-use hush_vani::nn::*;
+use hush_vani_core::alloc::AlignedVec;
+use hush_vani_core::nn::*;
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -108,3 +108,4 @@ fn main() {
     println!("\n(5 GRUs dominate: {:.1} ms of a ~83 ms NN)", t_gru * 5.0);
     println!("gl_total for one pass of the 4 shapes above: {gl_total:.2} ms");
 }
+

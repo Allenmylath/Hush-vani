@@ -4,10 +4,17 @@ A from-scratch Rust implementation of the [Hush](https://huggingface.co/weya-ai/
 enhancement model (a DeepFilterNet3 derivative), and the ONNX Runtime reference pipeline it
 was validated against.
 
+A Cargo workspace of two crates, plus the reference pipeline they were validated against:
+
 | directory | what |
 |---|---|
-| [`hush-vani/`](hush-vani/) | **the crate** — pure-Rust model, runtime-dispatched AVX2 kernels, no ONNX runtime, no BLAS |
+| [`hush-vani-core/`](hush-vani-core/) | shared DSP + neural kernels + the **encoder** (first stage) |
+| [`hush-vani/`](hush-vani/) | the **decoders** (second stage), the merge, and the `Hush` API — the crate users install |
 | [`ort/`](ort/) | the reference: Python + `onnxruntime`, bit-accurate against the model author's published audio |
+
+`hush-vani` depends on `hush-vani-core`. The split follows the model: the encoder produces a
+shared embedding that both decoders consume, so it is a clean, dependency-free first stage.
+Everything is runtime-dispatched AVX2, no ONNX runtime, no BLAS.
 
 The Rust output matches the ONNX Runtime pipeline to float32 rounding (**SI-SDR 129.7 dB**),
 and is faster: **1.07x on the neural network**, 1.12x on the full pipeline, single-threaded,
@@ -76,6 +83,18 @@ Rust-vs-ORT margin. Every comparison in this repo is therefore **paired** — th
 implementations run interleaved and the ratio is taken within each turn. `tools/ab_bench.py`
 reports a bootstrap CI and a Mann-Whitney U test. Unpaired medians repeatedly gave the wrong
 answer during development; the write-up records those cases.
+
+## Publishing
+
+The two crates publish in dependency order — `cargo package`/`publish` for the main crate
+resolves `hush-vani-core` from crates.io, so core must go first:
+
+```bash
+cargo publish -p hush-vani-core
+cargo publish -p hush-vani          # after core is live
+```
+
+Before the first publish, confirm the names are free (`cargo publish --dry-run`).
 
 ## Licence
 

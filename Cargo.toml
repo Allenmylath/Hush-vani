@@ -1,0 +1,10 @@
+# Workspace root. `ort/` is Python, not a crate, so it is not a member.
+[workspace]
+members = ["hush-vani-core", "hush-vani"]
+resolver = "2"
+
+# Release profile applies to every member; a member's own [profile.release] would be ignored.
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1

@@ -5,7 +5,9 @@ implementation of [`weya-ai/hush`](https://huggingface.co/weya-ai/hush) (a DeepF
 derivative). STFT, ERB features, all three neural graphs, deep filtering and overlap-add
 synthesis.
 
-**No ONNX runtime, no BLAS, no Python.** One dependency: `rustfft`.
+**No ONNX runtime, no BLAS, no Python.** Built on
+[`hush-vani-core`](https://crates.io/crates/hush-vani-core), which holds the shared DSP/NN
+kernels and the model's encoder; this crate adds the decoders, the merge, and the `Hush` API.
 
 - Output matches the reference ONNX Runtime pipeline to float32 rounding (**SI-SDR 129.7 dB**).
 - ~**110x faster than real time** on one core (5 s of audio in ~45 ms), and measurably
