@@ -1,0 +1,16 @@
+[package]
+name = "hush-vani-weights"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+description = "Bundled weights for the hush-vani speech-enhancement crate (weya-ai/hush, Apache-2.0)."
+license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/Allenmylath/Hush-vani"
+keywords = ["audio", "speech", "denoise", "weights", "model"]
+categories = ["multimedia::audio"]
+# A pure data crate: the weight blob, its manifest, and attribution. No dependencies, so it
+# publishes independently of the rest of the workspace.
+include = ["src/**/*.rs", "data/weights.bin", "data/weights.txt", "Cargo.toml", "README.md", "LICENSE", "NOTICE"]
+
+[dependencies]

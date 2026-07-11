@@ -20,11 +20,14 @@ autobins = false
 default = ["cli"]
 # The `hush-vani` binary (wav I/O).
 cli = ["dep:hound"]
+# Embed the model weights (~8 MB) via hush-vani-weights; enables `Hush::bundled()`.
+bundled = ["dep:hush-vani-weights"]
 # Verification + benchmark binaries. Need assets/; not usable from crates.io.
 devtools = ["cli"]
 
 [dependencies]
 hush-vani-core = { version = "0.1.0", path = "../hush-vani-core" }
+hush-vani-weights = { version = "0.1.0", path = "../hush-vani-weights", optional = true }
 rustfft = "6.2"
 hound = { version = "3.5", optional = true }
 
@@ -61,5 +64,9 @@ required-features = ["devtools"]
 name = "hush-features"
 path = "src/bin/features.rs"
 required-features = ["devtools"]
+
+[[example]]
+name = "bundled"
+required-features = ["bundled"]
 
 # profile.release lives in the workspace root Cargo.toml (a member's copy is ignored).

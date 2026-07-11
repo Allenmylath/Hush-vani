@@ -1,0 +1,17 @@
+hush-vani-weights
+
+This crate redistributes the model weights of "Hush" by Weya AI:
+
+    https://huggingface.co/weya-ai/hush
+
+The weights (data/weights.bin, data/weights.txt) are a repackaging of the ONNX
+bundle published there, converted to a flat little-endian f32 arena. No weight
+values are modified; only the container format differs.
+
+The Hush model is licensed under the Apache License, Version 2.0. A copy of that
+license is included as LICENSE. You may obtain the original at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Attribution, per Apache-2.0 section 4: the weights originate from Weya AI's
+weya-ai/hush model. This crate is not affiliated with or endorsed by Weya AI.

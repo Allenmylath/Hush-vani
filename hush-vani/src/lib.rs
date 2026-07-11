@@ -105,6 +105,19 @@ impl Hush {
         Self::build(Weights::from_paths(bin, manifest)?)
     }
 
+    /// Load the weights embedded by the `hush-vani-weights` crate.
+    ///
+    /// The simplest way to get a working model — no files, no export script. Requires the
+    /// `bundled` feature, which embeds ~8 MB of weights into your binary:
+    ///
+    /// ```toml
+    /// hush-vani = { version = "0.1", features = ["bundled"] }
+    /// ```
+    #[cfg(feature = "bundled")]
+    pub fn bundled() -> Result<Self, Error> {
+        Self::from_bytes(hush_vani_weights::WEIGHTS_BIN, hush_vani_weights::MANIFEST)
+    }
+
     /// True if this build will use the AVX2 + FMA kernels on this CPU.
     pub fn is_accelerated() -> bool {
         hush_vani_core::simd::has_avx2()

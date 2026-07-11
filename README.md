@@ -6,15 +6,17 @@ was validated against.
 
 A Cargo workspace of two crates, plus the reference pipeline they were validated against:
 
-| directory | what |
-|---|---|
-| [`hush-vani-core/`](hush-vani-core/) | shared DSP + neural kernels + the **encoder** (first stage) |
-| [`hush-vani/`](hush-vani/) | the **decoders** (second stage), the merge, and the `Hush` API — the crate users install |
-| [`ort/`](ort/) | the reference: Python + `onnxruntime`, bit-accurate against the model author's published audio |
+| directory | crate | what |
+|---|---|---|
+| [`hush-vani-core/`](hush-vani-core/) | `hush-vani-core` | shared DSP + neural kernels + the **encoder** (first stage) |
+| [`hush-vani/`](hush-vani/) | `hush-vani` | the **decoders** (second stage), the merge, and the `Hush` API — the crate users install |
+| [`hush-vani-weights/`](hush-vani-weights/) | `hush-vani-weights` | the model weights as an embeddable data blob (Apache-2.0, from weya-ai/hush) |
+| [`ort/`](ort/) | — | the reference: Python + `onnxruntime`, bit-accurate against the model author's published audio |
 
 `hush-vani` depends on `hush-vani-core`. The split follows the model: the encoder produces a
 shared embedding that both decoders consume, so it is a clean, dependency-free first stage.
-Everything is runtime-dispatched AVX2, no ONNX runtime, no BLAS.
+`hush-vani-weights` is a standalone data crate, pulled in only when you enable the `bundled`
+feature. Everything is runtime-dispatched AVX2, no ONNX runtime, no BLAS.
 
 The Rust output matches the ONNX Runtime pipeline to float32 rounding (**SI-SDR 129.7 dB**),
 and is faster: **1.07x on the neural network**, 1.12x on the full pipeline, single-threaded,
@@ -26,16 +28,24 @@ On the reference clip the model drops the noise floor by **42 dB** while costing
 
 ## Quick start (the crate)
 
+Easiest — embed the weights, no files to manage:
+
 ```toml
 [dependencies]
-hush-vani = "0.1"
+hush-vani = { version = "0.1", features = ["bundled"] }
 ```
 
 ```rust
-use hush_vani::Hush;
+let hush = hush_vani::Hush::bundled()?;      // ~8 MB of weights baked into the binary
+let clean = hush.enhance(&noisy)?;           // mono 16 kHz f32 in [-1, 1]
+```
 
+Or load weights from a file at runtime (no `bundled` feature, smaller binary):
+
+```rust
+use hush_vani::Hush;
 let hush = Hush::from_paths("weights.bin", "weights.txt")?;
-let clean = hush.enhance(&noisy)?;   // mono 16 kHz f32 in [-1, 1]
+let clean = hush.enhance(&noisy)?;
 # Ok::<(), hush_vani::Error>(())
 ```
 
@@ -86,15 +96,20 @@ answer during development; the write-up records those cases.
 
 ## Publishing
 
-The two crates publish in dependency order — `cargo package`/`publish` for the main crate
-resolves `hush-vani-core` from crates.io, so core must go first:
+Three crates, published in dependency order. `cargo publish` resolves every declared
+dependency (including optional ones) against crates.io, so the leaves go first and
+`hush-vani` — which depends on both — goes last:
 
 ```bash
-cargo publish -p hush-vani-core
-cargo publish -p hush-vani          # after core is live
+cargo publish -p hush-vani-core      # no dependencies
+cargo publish -p hush-vani-weights   # no dependencies (pure data, ~8 MB)
+cargo publish -p hush-vani           # depends on both; publish after they are live
 ```
 
-Before the first publish, confirm the names are free (`cargo publish --dry-run`).
+`hush-vani-core` and `hush-vani-weights` are independent and can go in either order. Wait a
+few seconds for each to index before the next. Confirm the names are free first with
+`cargo publish -p hush-vani-core --dry-run` (the dry-run on `hush-vani` will report its
+unpublished deps as "not found" — expected until the leaves are live).
 
 ## Licence
 
