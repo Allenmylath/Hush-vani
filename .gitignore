@@ -12,3 +12,8 @@ hush-vani/assets/
 # Downloaded from Hugging Face, not ours to vendor.
 ort/bundle/
 ort/onnx.tar.gz
+
+# Generated listening page (883 KB of embedded audio) + its metrics; rebuild with
+# python hush-vani/tools/build_listen.py
+comparison/listen.html
+comparison/metrics.json
