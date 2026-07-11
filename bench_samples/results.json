@@ -1,0 +1,210 @@
+{
+ "results": [
+  {
+   "id": "01",
+   "noise": "Muching",
+   "dur": 10.0,
+   "in_floor": -47.8,
+   "in_snr": 25.9,
+   "f32": {
+    "reduction": 72.2,
+    "floor": -120.0,
+    "dr": 96.7,
+    "sisdr": null,
+    "resid": null,
+    "ms": 307.1
+   },
+   "f16": {
+    "reduction": 72.2,
+    "floor": -120.0,
+    "dr": 96.7,
+    "sisdr": 72.2,
+    "resid": -100.2,
+    "ms": 148.7
+   },
+   "int8": {
+    "reduction": 63.8,
+    "floor": -111.7,
+    "dr": 88.4,
+    "sisdr": 33.8,
+    "resid": -61.1,
+    "ms": 147.9
+   }
+  },
+  {
+   "id": "02",
+   "noise": "Door",
+   "dur": 10.0,
+   "in_floor": -42.4,
+   "in_snr": 19.8,
+   "f32": {
+    "reduction": 22.9,
+    "floor": -65.3,
+    "dr": 39.1,
+    "sisdr": null,
+    "resid": null,
+    "ms": 146.9
+   },
+   "f16": {
+    "reduction": 22.9,
+    "floor": -65.3,
+    "dr": 39.1,
+    "sisdr": 69.2,
+    "resid": -100.0,
+    "ms": 141.5
+   },
+   "int8": {
+    "reduction": 22.4,
+    "floor": -64.8,
+    "dr": 38.8,
+    "sisdr": 30.9,
+    "resid": -61.6,
+    "ms": 127.6
+   }
+  },
+  {
+   "id": "03",
+   "noise": "AirCon",
+   "dur": 10.0,
+   "in_floor": -34.7,
+   "in_snr": 15.8,
+   "f32": {
+    "reduction": 42.1,
+    "floor": -76.7,
+    "dr": 51.2,
+    "sisdr": null,
+    "resid": null,
+    "ms": 148.2
+   },
+   "f16": {
+    "reduction": 42.1,
+    "floor": -76.7,
+    "dr": 51.2,
+    "sisdr": 58.5,
+    "resid": -84.6,
+    "ms": 137.8
+   },
+   "int8": {
+    "reduction": 41.3,
+    "floor": -76.0,
+    "dr": 51.0,
+    "sisdr": 26.0,
+    "resid": -53.1,
+    "ms": 135.0
+   }
+  },
+  {
+   "id": "04",
+   "noise": "Chips",
+   "dur": 10.0,
+   "in_floor": -35.8,
+   "in_snr": 20.2,
+   "f32": {
+    "reduction": 40.8,
+    "floor": -76.6,
+    "dr": 57.7,
+    "sisdr": null,
+    "resid": null,
+    "ms": 146.2
+   },
+   "f16": {
+    "reduction": 40.9,
+    "floor": -76.6,
+    "dr": 57.7,
+    "sisdr": 72.1,
+    "resid": -94.4,
+    "ms": 134.2
+   },
+   "int8": {
+    "reduction": 40.4,
+    "floor": -76.1,
+    "dr": 57.2,
+    "sisdr": 31.8,
+    "resid": -55.8,
+    "ms": 136.7
+   }
+  },
+  {
+   "id": "05",
+   "noise": "Street-Creaky",
+   "dur": 10.0,
+   "in_floor": -30.5,
+   "in_snr": 14.2,
+   "f32": {
+    "reduction": 39.5,
+    "floor": -70.1,
+    "dr": 47.7,
+    "sisdr": null,
+    "resid": null,
+    "ms": 149.6
+   },
+   "f16": {
+    "reduction": 39.5,
+    "floor": -70.1,
+    "dr": 47.6,
+    "sisdr": 64.7,
+    "resid": -88.7,
+    "ms": 138.7
+   },
+   "int8": {
+    "reduction": 38.8,
+    "floor": -69.3,
+    "dr": 47.1,
+    "sisdr": 27.1,
+    "resid": -53.7,
+    "ms": 133.2
+   }
+  },
+  {
+   "id": "06",
+   "noise": "Water",
+   "dur": 10.0,
+   "in_floor": -28.9,
+   "in_snr": 9.6,
+   "f32": {
+    "reduction": 42.6,
+    "floor": -71.5,
+    "dr": 40.0,
+    "sisdr": null,
+    "resid": null,
+    "ms": 143.3
+   },
+   "f16": {
+    "reduction": 42.6,
+    "floor": -71.5,
+    "dr": 40.0,
+    "sisdr": 64.4,
+    "resid": -98.7,
+    "ms": 133.3
+   },
+   "int8": {
+    "reduction": 40.9,
+    "floor": -69.8,
+    "dr": 38.8,
+    "sisdr": 23.7,
+    "resid": -57.4,
+    "ms": 134.3
+   }
+  }
+ ],
+ "agg": {
+  "f32": {
+   "reduction": 43.4,
+   "sisdr": null,
+   "resid": null,
+   "ms": 173.6
+  },
+  "f16": {
+   "reduction": 43.4,
+   "sisdr": 66.9,
+   "resid": -94.4,
+   "ms": 139.0
+  },
+  "int8": {
+   "reduction": 41.3,
+   "sisdr": 28.9,
+   "resid": -57.1,
+   "ms": 135.8
+  }
+ }
+}

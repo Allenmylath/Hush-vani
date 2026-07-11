@@ -17,3 +17,13 @@ ort/onnx.tar.gz
 # python hush-vani/tools/build_listen.py
 comparison/listen.html
 comparison/metrics.json
+
+# Third-party demo audio (DeepFilterNet2 samples) + derived outputs.
+# Not ours to redistribute; fetch with hush-vani/tools/bench_samples.py
+bench_samples/noisy/
+bench_samples/df2_ref/
+bench_samples/in16k/
+bench_samples/f32/
+bench_samples/f16/
+bench_samples/int8/
+bench_samples/samples.html
