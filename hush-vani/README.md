@@ -251,13 +251,28 @@ fit the 16 ymm registers, giving 13 memory ops per 12 vector-FMAs instead of 9 p
 - **Register-blocked `pointwise` without tiling / without const-generic blocks.** 0.5x and
   0.9x respectively. Both fixed above; the naive-looking axpy beat a half-finished kernel.
 - **f16 *compute* kernels.** The reasoning looked airtight: the recurrent matvec re-reads the
-  whole 768×256 matrix every frame, so holding weights as f16 halves the bytes per FMA and
-  `vcvtph2ps` widens 8 lanes in one instruction. Measured (paired, interleaved): **0.904x —
-  10% *slower***, CI [0.814, 0.971]. The premise was wrong. At 768 KB the matrix already sits
-  in L2 across frames, so there was no bandwidth to save; meanwhile 12 converts per 12 FMAs
-  contend for the same ports. The kernels are kept behind `hush-vani-core/f16-kernels` — they
-  do halve resident weight memory (9.1 → 4.6 MB), which is a real trade for a memory-tight
-  target, just not a speed one.
+  whole 768×256 matrix every frame, so holding weights as f16 halves the bytes per FMA, and
+  `vcvtph2ps` widens 8 lanes in one instruction. Measured end-to-end (paired, interleaved):
+  **0.904x — 10% *slower***, CI [0.814, 0.971].
+
+  The premise was simply false, and one number shows why (`hush-kernel-ab`):
+
+  | kernel (f32) | throughput |
+  |---|---|
+  | input GEMM `x@Wᵀ` | **55.2 GFMA/s** |
+  | recurrent matvec `h@Rᵀ` | 37.2 GFMA/s |
+
+  AVX2 peak is 2 FMA units × 8 lanes ≈ **56 GFMA/s**. The GEMM is at ~99% of the hardware
+  issue ceiling — **you cannot be memory-starved while executing at peak FMA rate.** Nothing
+  was ever waiting on memory, so there is no stall for the conversions to hide in: every
+  `vcvtph2ps` is an extra uop that displaces real work. The kernel closest to peak lost the
+  *most* (GEMM 0.80x, matvec 0.89x) — backwards for a bandwidth story, exactly right for an
+  issue-bound one. (A first attempt to explain this by weight *reuse* — 1 convert per 2 FMAs
+  in the GEMM vs 1-per-1 in the matvec — predicted the GEMM would be fine. It was worse. The
+  data corrected that too.)
+
+  Kept behind `hush-vani-core/f16-kernels`: they do halve resident weight memory
+  (9.1 → 4.6 MB), a real trade for a memory-tight target, just not a speed one.
 
 Every reverted change is listed rather than quietly dropped — including one, weight
 packing, that was reverted *in error* and later reinstated once measured properly.

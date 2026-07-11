@@ -245,6 +245,50 @@ fn matvec_ab() {
     println!("  max|diff| between 8-row and packed12: {d:.2e}");
 }
 
+/// Does f16 compute lose *because of conversion throughput*, and only where the weights
+/// have no reuse to amortise it over?
+///
+/// vcvtph2ps issues ~1/cycle; FMA issues 2/cycle. So one convert per FMA halves the issue
+/// rate. The recurrent matvec (h@R^T) has ZERO weight reuse -- each vector is converted,
+/// used once, discarded => 1 convert / 1 FMA => port-bound. The input projection (x@W^T) is
+/// a GEMM reusing each weight vector across 2 timesteps => 1 convert / 2 FMAs => not bound.
+///
+/// Prediction: f16 is bad on the matvec, ~neutral on the GEMM. If that holds, the mechanism
+/// is conversion throughput, not memory bandwidth.
+fn f16_ab() {
+    use hush_vani_core::alloc::AlignedVec;
+    use hush_vani_core::nn::{gemm_nt, gemm_nt_f16, matvec_packed, matvec_packed_f16,
+                             pack_rows, pack_rows_f16, to_f16_vec};
+    if !hush_vani_core::simd::has_f16c() {
+        println!("\n(no F16C; skipping)");
+        return;
+    }
+    let (rows, k) = (768usize, 256usize);
+    let w = AlignedVec::from_slice(&rnd(rows * k, 31));
+    let w16 = to_f16_vec(&w);
+    let rp = pack_rows(&w, rows, k);
+    let rp16 = pack_rows_f16(&w, rows, k);
+    let hv = AlignedVec::from_slice(&rnd(k, 32));
+    let bias = rnd(rows, 33);
+    let mut o1 = vec![0f32; rows];
+    let mut o2 = vec![0f32; rows];
+    let fmas = (rows * k * T) as f64;
+
+    println!("\nf16 vs f32 compute (ratio >1 = f16 faster):");
+    // NO weight reuse: one convert per FMA
+    ab("recurrent matvec (0x reuse)", fmas,
+       || for _ in 0..T { matvec_packed(&rp, rows, k, &hv, &mut o1) },
+       || for _ in 0..T { matvec_packed_f16(&rp16, rows, k, &hv, &mut o2) });
+
+    // 2x weight reuse (2 timesteps per loaded weight vector)
+    let x = AlignedVec::from_slice(&rnd(T * k, 34));
+    let mut g1 = vec![0f32; T * rows];
+    let mut g2 = vec![0f32; T * rows];
+    ab("input GEMM (2x reuse)", fmas,
+       || gemm_nt(&x, T, k, &w, rows, &bias, &mut g1),
+       || gemm_nt_f16(&x, T, k, &w16, rows, &bias, &mut g2));
+}
+
 fn main() {
     println!("interleaved old-vs-new, medians (ratio >1 = new is faster)\n");
 
@@ -276,5 +320,6 @@ fn main() {
     }
 
     matvec_ab();
+    f16_ab();
 }
 
