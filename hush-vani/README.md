@@ -250,6 +250,14 @@ fit the 16 ymm registers, giving 13 memory ops per 12 vector-FMAs instead of 9 p
   measuring before optimising: the "obviously memory-bound" reading was wrong.
 - **Register-blocked `pointwise` without tiling / without const-generic blocks.** 0.5x and
   0.9x respectively. Both fixed above; the naive-looking axpy beat a half-finished kernel.
+- **f16 *compute* kernels.** The reasoning looked airtight: the recurrent matvec re-reads the
+  whole 768×256 matrix every frame, so holding weights as f16 halves the bytes per FMA and
+  `vcvtph2ps` widens 8 lanes in one instruction. Measured (paired, interleaved): **0.904x —
+  10% *slower***, CI [0.814, 0.971]. The premise was wrong. At 768 KB the matrix already sits
+  in L2 across frames, so there was no bandwidth to save; meanwhile 12 converts per 12 FMAs
+  contend for the same ports. The kernels are kept behind `hush-vani-core/f16-kernels` — they
+  do halve resident weight memory (9.1 → 4.6 MB), which is a real trade for a memory-tight
+  target, just not a speed one.
 
 Every reverted change is listed rather than quietly dropped — including one, weight
 packing, that was reverted *in error* and later reinstated once measured properly.

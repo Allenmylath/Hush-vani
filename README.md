@@ -36,9 +36,13 @@ hush-vani = { version = "0.1", features = ["bundled"] }
 ```
 
 ```rust
-let hush = hush_vani::Hush::bundled()?;      // ~8 MB of weights baked into the binary
+let hush = hush_vani::Hush::bundled()?;      // ~4.6 MB of f16 weights baked into the binary
 let clean = hush.enhance(&noisy)?;           // mono 16 kHz f32 in [-1, 1]
 ```
+
+The bundled weights are **float16** — half the size, widened to f32 at load, so no speed cost.
+Output differs from full-f32 weights by 75.5 dB SI-SDR, above what a 16-bit WAV can represent.
+For bit-exactness against onnxruntime (129.7 dB), export f32 weights and use `from_paths`.
 
 Or load weights from a file at runtime (no `bundled` feature, smaller binary):
 

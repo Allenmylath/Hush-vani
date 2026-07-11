@@ -23,10 +23,15 @@ struct Net {
     dec: Decoders,
 }
 
+/// Weight basename, so f32 and f16 can be compared without swapping files:
+/// `HUSH_W=weights.f32 hush-devtool bench 5`
 fn load_model() -> Net {
+    let base = std::env::var("HUSH_W").unwrap_or_else(|_| "weights".into());
     let w = Arc::new(
-        Weights::from_paths(assets("weights.bin"), assets("weights.txt")).expect("weights"),
+        Weights::from_paths(assets(&format!("{base}.bin")), assets(&format!("{base}.txt")))
+            .expect("weights"),
     );
+    eprintln!("[{} weights, f16 kernels: {}]", if w.is_f16() { "f16" } else { "f32" }, w.is_f16());
     Net {
         enc: Encoder::new(Arc::clone(&w)).expect("encoder"),
         dec: Decoders::new(w).expect("decoders"),

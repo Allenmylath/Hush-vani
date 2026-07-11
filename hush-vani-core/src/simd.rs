@@ -23,6 +23,98 @@ pub fn has_avx2() -> bool {
     }
 }
 
+/// True if AVX2 + FMA **and** F16C are available, i.e. the f16 weight kernels can run.
+///
+/// F16C (`vcvtph2ps`) has shipped on every x86 core with AVX2, but it is a separate CPUID
+/// bit, so it is checked rather than assumed.
+#[inline]
+pub fn has_f16c() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        static OK: OnceLock<bool> = OnceLock::new();
+        *OK.get_or_init(|| has_avx2() && is_x86_feature_detected!("f16c"))
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        false
+    }
+}
+
+/// Scalar f32 -> IEEE binary16 bits (round-to-nearest-even), for the load-time conversion.
+pub fn f32_to_f16(x: f32) -> u16 {
+    let b = x.to_bits();
+    let sign = ((b >> 16) & 0x8000) as u16;
+    let mut exp = ((b >> 23) & 0xff) as i32 - 127 + 15;
+    let mant = b & 0x007f_ffff;
+
+    if ((b >> 23) & 0xff) == 0xff {
+        // Inf / NaN
+        return sign | 0x7c00 | if mant != 0 { 0x0200 } else { 0 };
+    }
+    if exp >= 0x1f {
+        return sign | 0x7c00; // overflow -> Inf
+    }
+    if exp <= 0 {
+        // subnormal (or underflow to zero)
+        if exp < -10 {
+            return sign;
+        }
+        let mant = mant | 0x0080_0000;
+        let shift = (14 - exp) as u32;
+        let half = 1u32 << (shift - 1);
+        let round = mant & (half | (half - 1) | ((mant >> shift) & 1));
+        let v = (mant + if round > half || (round == half && (mant >> shift) & 1 == 1) { half } else { 0 }) >> shift;
+        return sign | v as u16;
+    }
+    // normal: round mantissa to 10 bits, round-to-nearest-even
+    let lsb = (mant >> 13) & 1;
+    let rounded = mant + 0x0fff + lsb;
+    if rounded & 0x0080_0000 != 0 {
+        exp += 1;
+        if exp >= 0x1f {
+            return sign | 0x7c00;
+        }
+    }
+    sign | ((exp as u16) << 10) | ((rounded >> 13) & 0x03ff) as u16
+}
+
+/// Scalar IEEE binary16 bits -> f32. Exact (every f16 is representable in f32).
+#[inline]
+pub fn f16_to_f32(h: u16) -> f32 {
+    let sign = ((h & 0x8000) as u32) << 16;
+    let exp = ((h >> 10) & 0x1f) as u32;
+    let mant = (h & 0x03ff) as u32;
+    let bits = if exp == 0 {
+        if mant == 0 {
+            sign
+        } else {
+            // subnormal: renormalise
+            let shift = mant.leading_zeros() - 21;
+            let e = 127 - 15 - shift;
+            sign | (e << 23) | ((mant << (shift + 1)) & 0x007f_ffff)
+        }
+    } else if exp == 0x1f {
+        sign | 0x7f80_0000 | (mant << 13)
+    } else {
+        sign | ((exp + 127 - 15) << 23) | (mant << 13)
+    };
+    f32::from_bits(bits)
+}
+
+/// Quantise a f32 slice to f16 bits.
+pub fn to_f16(src: &[f32], dst: &mut [u16]) {
+    for (d, &s) in dst.iter_mut().zip(src) {
+        *d = f32_to_f16(s);
+    }
+}
+
+/// Dequantise f16 bits back to f32.
+pub fn from_f16(src: &[u16], dst: &mut [f32]) {
+    for (d, &s) in dst.iter_mut().zip(src) {
+        *d = f16_to_f32(s);
+    }
+}
+
 #[inline]
 pub fn sigmoid(x: f32) -> f32 {
     1.0 / (1.0 + (-x).exp())
@@ -154,6 +246,38 @@ pub mod x86 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn f16_roundtrip_is_stable_and_accurate() {
+        // f16 has a 10-bit mantissa => relative error <= 2^-11 ~ 4.9e-4
+        for i in -20000..20000 {
+            let x = i as f32 * 0.001;
+            let r = f16_to_f32(f32_to_f16(x));
+            let tol = 5e-4 * x.abs().max(1e-5);
+            assert!((r - x).abs() <= tol, "x={x} -> {r}");
+            // quantising an already-f16 value must be idempotent
+            assert_eq!(f32_to_f16(r), f32_to_f16(x), "not idempotent at x={x}");
+        }
+        assert_eq!(f16_to_f32(f32_to_f16(0.0)), 0.0);
+        assert!(f16_to_f32(f32_to_f16(-0.0)).is_sign_negative());
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn f16c_hardware_matches_scalar() {
+        if !has_f16c() {
+            return;
+        }
+        // the SIMD path must agree exactly with the scalar reference
+        let xs: Vec<f32> = (0..800).map(|i| (i as f32 - 400.0) * 0.037).collect();
+        let mut h = vec![0u16; xs.len()];
+        to_f16(&xs, &mut h);
+        let mut back = vec![0f32; xs.len()];
+        from_f16(&h, &mut back);
+        for (i, (&b, &x)) in back.iter().zip(&xs).enumerate() {
+            assert_eq!(b, f16_to_f32(f32_to_f16(x)), "lane {i}");
+        }
+    }
 
     #[test]
     fn vectorised_matches_libm() {

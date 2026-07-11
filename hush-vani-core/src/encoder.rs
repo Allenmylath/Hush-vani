@@ -28,6 +28,15 @@ const REQUIRED: [&str; 25] = [
     "enc/onnx::MatMul_365", "enc/lsnr_fc.0.bias",
 ];
 
+/// Matmul weights (grouped-linear + GRU input `W`) — held as f16, since these are the
+/// bandwidth-bound streams. Everything else in [`REQUIRED`] stays f32.
+const MATS: [&str; 4] = [
+    "enc/df_fc_emb.0.weight",
+    "enc/emb_gru.linear_in.0.weight",
+    "enc/emb_gru.linear_out.0.weight",
+    "enc/onnx::GRU_360",
+];
+
 const GRU_R: [&str; 1] = ["enc/onnx::GRU_361"];
 
 /// Encoder outputs, consumed by the decoders.
@@ -60,7 +69,7 @@ pub struct Encoder {
 impl Encoder {
     /// Build the encoder from shared weights, validating and packing what it needs.
     pub fn new(weights: Arc<Weights>) -> Result<Self, Error> {
-        Ok(Encoder { bank: WeightBank::new(weights, &REQUIRED, &GRU_R)? })
+        Ok(Encoder { bank: WeightBank::new(weights, &REQUIRED, &MATS, &GRU_R)? })
     }
 
     /// Run the encoder over `t` frames of features.

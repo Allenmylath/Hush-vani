@@ -14,5 +14,9 @@ fn main() {
     println!("runtime detected:");
     println!("  avx2 {}", is_x86_feature_detected!("avx2"));
     println!("  fma  {}", is_x86_feature_detected!("fma"));
+    println!("  f16c {}", is_x86_feature_detected!("f16c"));
     println!("  avx512f {}", is_x86_feature_detected!("avx512f"));
+    println!("kernels:");
+    println!("  avx2 path  {}", hush_vani_core::simd::has_avx2());
+    println!("  f16 path   {}", hush_vani_core::simd::has_f16c());
 }

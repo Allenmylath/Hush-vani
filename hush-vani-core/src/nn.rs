@@ -4,7 +4,7 @@
 //! Every kernel has a portable scalar path and an AVX2+FMA path selected at runtime by
 //! [`crate::simd::has_avx2`]. On x86-64 with AVX2 the fast path is ~4x the scalar one.
 
-use crate::alloc::AlignedVec;
+use crate::alloc::{AlignedU16, AlignedVec};
 use crate::simd::{has_avx2, sigmoid};
 
 /// Rows per panel in the packed layout. 12 accumulators + 1 broadcast vector still fit the
@@ -125,6 +125,107 @@ pub fn matvec_packed(p: &[f32], rows: usize, k: usize, x: &[f32], out: &mut [f32
             }
         }
         out[j] = s;
+    }
+}
+
+// ------------------------------------------------------- f16 weight kernels
+//
+// The recurrent matvec streams the whole 768x256 weight matrix every frame and is
+// bandwidth-bound, not issue-bound. Holding those weights as f16 halves the bytes per FMA;
+// F16C converts 8 lanes to f32 in one `vcvtph2ps` on the way into the FMA, so the extra
+// instruction is paid out of spare issue slots. Net: smaller *and* faster.
+
+/// Quantise to f16 and repack into `PANEL`-row panels (the f16 twin of [`pack_rows`]).
+pub fn pack_rows_f16(m: &[f32], rows: usize, k: usize) -> AlignedU16 {
+    assert!(rows % PANEL == 0 && k % 8 == 0, "pack_rows_f16: bad shape {rows}x{k}");
+    let mut p = AlignedU16::zeros(rows * k);
+    for jb in 0..rows / PANEL {
+        for c in 0..k / 8 {
+            for l in 0..PANEL {
+                let s = (jb * PANEL + l) * k + c * 8;
+                let d = jb * PANEL * k + c * 8 * PANEL + l * 8;
+                for e in 0..8 {
+                    p[d + e] = crate::simd::f32_to_f16(m[s + e]);
+                }
+            }
+        }
+    }
+    p
+}
+
+/// Quantise a plain row-major matrix to f16.
+pub fn to_f16_vec(m: &[f32]) -> AlignedU16 {
+    let mut v = AlignedU16::zeros(m.len());
+    crate::simd::to_f16(m, &mut v);
+    v
+}
+
+/// [`matvec_packed`] over f16 panels. Same summation order, so it differs from the f32
+/// kernel only by the weights' f16 rounding.
+pub fn matvec_packed_f16(p: &[u16], rows: usize, k: usize, x: &[f32], out: &mut [f32]) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::simd::has_f16c() && crate::alloc::is_aligned32(x.as_ptr()) {
+        unsafe { x86::matvec_packed_f16(p, rows, k, x, out) };
+        return;
+    }
+    // portable fallback: dequantise per element
+    for j in 0..rows {
+        let (jb, l) = (j / PANEL, j % PANEL);
+        let mut s = 0.0;
+        for c in 0..k / 8 {
+            for e in 0..8 {
+                let w = crate::simd::f16_to_f32(p[jb * PANEL * k + c * 8 * PANEL + l * 8 + e]);
+                s = w.mul_add(x[c * 8 + e], s);
+            }
+        }
+        out[j] = s;
+    }
+}
+
+/// [`gemm_nt`] with f16 weights.
+pub fn gemm_nt_f16(x: &[f32], t: usize, k: usize, w: &[u16], rows: usize, b: &[f32], out: &mut [f32]) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::simd::has_f16c() && (k * 4) % 32 == 0 && crate::alloc::is_aligned32(x.as_ptr()) {
+        unsafe { x86::gemm_nt_f16(x, t, k, w, rows, b, out) };
+        return;
+    }
+    for ti in 0..t {
+        for j in 0..rows {
+            let mut s = b[j];
+            for i in 0..k {
+                s = crate::simd::f16_to_f32(w[j * k + i]).mul_add(x[ti * k + i], s);
+            }
+            out[ti * rows + j] = s;
+        }
+    }
+}
+
+/// [`grouped_linear`] with f16 weights. `w` is [G, I, H] row-major, f16.
+pub fn grouped_linear_f16(x: &[f32], t: usize, g: usize, i: usize, h: usize, w: &[u16]) -> Vec<f32> {
+    let mut out = vec![0f32; t * g * h];
+    for ti in 0..t {
+        for gi in 0..g {
+            let xv = &x[ti * g * i + gi * i..ti * g * i + (gi + 1) * i];
+            let dst = &mut out[ti * g * h + gi * h..ti * g * h + (gi + 1) * h];
+            linear_row_f16(xv, &w[gi * i * h..(gi + 1) * i * h], h, dst);
+        }
+    }
+    out
+}
+
+fn linear_row_f16(xv: &[f32], w: &[u16], h: usize, dst: &mut [f32]) {
+    #[cfg(target_arch = "x86_64")]
+    if crate::simd::has_f16c() {
+        unsafe { x86::linear_row_f16(xv, w, h, dst) };
+        return;
+    }
+    dst.fill(0.0);
+    for (ii, &xs) in xv.iter().enumerate() {
+        if xs != 0.0 {
+            for hh in 0..h {
+                dst[hh] = crate::simd::f16_to_f32(w[ii * h + hh]).mul_add(xs, dst[hh]);
+            }
+        }
     }
 }
 
@@ -384,6 +485,27 @@ pub fn gru(x: &[f32], t: usize, i: usize, w: &[f32], r_packed: &[f32], b: &[f32]
     let mut y = vec![0f32; t * h_size];
     for ti in 0..t {
         matvec_packed(r_packed, h3, h_size, &h, &mut hr);
+        gate_update(&xw[ti * h3..(ti + 1) * h3], &hr, &b[h3..], &mut h, h_size);
+        y[ti * h_size..(ti + 1) * h_size].copy_from_slice(&h);
+    }
+    y
+}
+
+/// [`gru`] with f16 weight matrices. Biases and the recurrent state stay f32; only the two
+/// big weight streams (W and packed R) are halved, which is where the bandwidth goes.
+pub fn gru_f16(x: &[f32], t: usize, i: usize, w: &[u16], r_packed: &[u16], b: &[f32], h_size: usize) -> Vec<f32> {
+    let h3 = 3 * h_size;
+
+    let mut xa = AlignedVec::zeros(t * i);
+    xa.copy_from_slice(x);
+    let mut xw = AlignedVec::zeros(t * h3);
+    gemm_nt_f16(&xa, t, i, w, h3, &b[..h3], &mut xw);
+
+    let mut h = AlignedVec::zeros(h_size);
+    let mut hr = AlignedVec::zeros(h3);
+    let mut y = vec![0f32; t * h_size];
+    for ti in 0..t {
+        matvec_packed_f16(r_packed, h3, h_size, &h, &mut hr);
         gate_update(&xw[ti * h3..(ti + 1) * h3], &hr, &b[h3..], &mut h, h_size);
         y[ti * h_size..(ti + 1) * h_size].copy_from_slice(&h);
     }
@@ -694,6 +816,137 @@ mod x86 {
             let nh = _mm256_fmadd_ps(_mm256_sub_ps(_mm256_set1_ps(1.0), z), hh, _mm256_mul_ps(z, hold));
             _mm256_store_ps(h.as_mut_ptr().add(k), nh);
             k += 8;
+        }
+    }
+
+    // ---------------------------------------------------------- f16 weight kernels
+    //
+    // `_mm256_cvtph_ps` turns a 128-bit load of 8 f16 into 8 f32 in one instruction. The
+    // weight stream is halved (16 B per 8 FMAs instead of 32 B); the conversion rides in
+    // spare issue slots because these kernels are bandwidth-bound, not issue-bound.
+
+    #[target_feature(enable = "avx2,fma,f16c")]
+    #[inline]
+    unsafe fn ld8h(p: *const u16) -> __m256 {
+        _mm256_cvtph_ps(_mm_loadu_si128(p as *const __m128i))
+    }
+
+    #[target_feature(enable = "avx2,fma,f16c")]
+    pub unsafe fn matvec_packed_f16(p: &[u16], rows: usize, k: usize, x: &[f32], out: &mut [f32]) {
+        const PANEL: usize = super::PANEL;
+        let px = x.as_ptr();
+        for jb in 0..rows / PANEL {
+            let mut acc = [_mm256_setzero_ps(); PANEL];
+            let panel = p.as_ptr().add(jb * PANEL * k);
+            for c in 0..k / 8 {
+                let xv = _mm256_load_ps(px.add(c * 8));
+                let base = panel.add(c * 8 * PANEL);
+                for (l, a) in acc.iter_mut().enumerate() {
+                    *a = _mm256_fmadd_ps(ld8h(base.add(l * 8)), xv, *a);
+                }
+            }
+            for l in 0..PANEL {
+                out[jb * PANEL + l] = hsum(acc[l]);
+            }
+        }
+    }
+
+    #[target_feature(enable = "avx2,fma,f16c")]
+    pub unsafe fn gemm_nt_f16(
+        x: &[f32], t: usize, k: usize, w: &[u16], rows: usize, b: &[f32], out: &mut [f32],
+    ) {
+        let (pw, px) = (w.as_ptr(), x.as_ptr());
+        let mut ti = 0;
+        while ti + 2 <= t {
+            let (x0, x1) = (px.add(ti * k), px.add((ti + 1) * k));
+            let mut j = 0;
+            while j + 4 <= rows {
+                let mut a = [_mm256_setzero_ps(); 8]; // [row][t]
+                let base = pw.add(j * k);
+                let mut i = 0;
+                while i + 8 <= k {
+                    let v0 = _mm256_load_ps(x0.add(i));
+                    let v1 = _mm256_load_ps(x1.add(i));
+                    for l in 0..4 {
+                        let m = ld8h(base.add(l * k + i));
+                        a[l * 2] = _mm256_fmadd_ps(m, v0, a[l * 2]);
+                        a[l * 2 + 1] = _mm256_fmadd_ps(m, v1, a[l * 2 + 1]);
+                    }
+                    i += 8;
+                }
+                for l in 0..4 {
+                    for (u, tt) in [ti, ti + 1].iter().enumerate() {
+                        let mut r = hsum(a[l * 2 + u]);
+                        for ii in i..k {
+                            r += crate::simd::f16_to_f32(*base.add(l * k + ii)) * x[tt * k + ii];
+                        }
+                        out[tt * rows + j + l] = r + b[j + l];
+                    }
+                }
+                j += 4;
+            }
+            while j < rows {
+                for tt in [ti, ti + 1] {
+                    let mut s = b[j];
+                    for ii in 0..k {
+                        s = crate::simd::f16_to_f32(*pw.add(j * k + ii)).mul_add(x[tt * k + ii], s);
+                    }
+                    out[tt * rows + j] = s;
+                }
+                j += 1;
+            }
+            ti += 2;
+        }
+        while ti < t {
+            for j in 0..rows {
+                let mut s = b[j];
+                for ii in 0..k {
+                    s = crate::simd::f16_to_f32(*pw.add(j * k + ii)).mul_add(x[ti * k + ii], s);
+                }
+                out[ti * rows + j] = s;
+            }
+            ti += 1;
+        }
+    }
+
+    #[target_feature(enable = "avx2,fma,f16c")]
+    pub unsafe fn linear_row_f16(xv: &[f32], w: &[u16], h: usize, dst: &mut [f32]) {
+        let pw = w.as_ptr();
+        let pd = dst.as_mut_ptr();
+        let mut hb = 0;
+        while hb + 64 <= h {
+            let mut acc = [_mm256_setzero_ps(); 8];
+            for (ii, &xs) in xv.iter().enumerate() {
+                if xs == 0.0 {
+                    continue;
+                }
+                let bc = _mm256_set1_ps(xs);
+                let base = pw.add(ii * h + hb);
+                for (l, a) in acc.iter_mut().enumerate() {
+                    *a = _mm256_fmadd_ps(ld8h(base.add(l * 8)), bc, *a);
+                }
+            }
+            for l in 0..8 {
+                _mm256_storeu_ps(pd.add(hb + l * 8), acc[l]);
+            }
+            hb += 64;
+        }
+        while hb + 8 <= h {
+            let mut a = _mm256_setzero_ps();
+            for (ii, &xs) in xv.iter().enumerate() {
+                if xs != 0.0 {
+                    a = _mm256_fmadd_ps(ld8h(pw.add(ii * h + hb)), _mm256_set1_ps(xs), a);
+                }
+            }
+            _mm256_storeu_ps(pd.add(hb), a);
+            hb += 8;
+        }
+        for hh in hb..h {
+            let mut s = 0.0;
+            for (ii, &xs) in xv.iter().enumerate() {
+                s = crate::simd::f16_to_f32(*pw.add(ii * h + hh)).mul_add(xs, s);
+            }
+            dst[hh] = s;
         }
     }
 }

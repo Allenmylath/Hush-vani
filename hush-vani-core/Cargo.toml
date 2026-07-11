@@ -11,5 +11,13 @@ keywords = ["audio", "speech", "denoise", "dsp", "simd"]
 categories = ["multimedia::audio", "algorithms"]
 include = ["src/**/*.rs", "Cargo.toml", "README.md", "LICENSE*"]
 
+[features]
+# Run the matmul kernels natively on f16 weights (requires an f16 weight file + F16C).
+# Halves resident weight memory (9.1 MB -> 4.6 MB) at ~10% lower throughput: the matrices
+# already fit in L2, so there is no bandwidth to save, and vcvtph2ps competes with the FMA
+# ports. Off by default -- f16 files are widened to f32 at load and run the f32 kernels,
+# which is the same arithmetic at full speed.
+f16-kernels = []
+
 [dependencies]
 rustfft = "6.2"

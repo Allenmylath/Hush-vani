@@ -25,10 +25,21 @@ let hush = Hush::from_bytes(hush_vani_weights::WEIGHTS_BIN, hush_vani_weights::M
 # Ok::<(), hush_vani::Error>(())
 ```
 
-The blob adds **~8 MB** to your binary (embedded via `include_bytes!`). To load weights from
+The blob adds **~4.6 MB** to your binary (embedded via `include_bytes!`). To load weights from
 a file at runtime instead, use
 [`Hush::from_paths`](https://docs.rs/hush-vani/latest/hush_vani/struct.Hush.html#method.from_paths)
 and don't depend on this crate at all.
+
+## Precision
+
+The blob is **float16**, half the size of the original float32 weights (9.12 → 4.56 MB). It
+is widened to f32 at load and run through the same f32 kernels, so **there is no speed cost**
+— f16 here is a storage format, not a compute format.
+
+End to end, output differs from full-f32 weights by **75.5 dB SI-SDR**. A 16-bit WAV tops out
+near 67 dB, so the difference cannot be represented in a shipped file, let alone heard. If you
+need bit-exactness against the reference ONNX pipeline (129.7 dB), regenerate f32 weights with
+`tools/export_weights.py` and load them via `Hush::from_paths`.
 
 ## Licence and attribution
 

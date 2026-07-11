@@ -32,6 +32,18 @@ const REQUIRED: [&str; 37] = [
     "df_dec/onnx::Conv_314", "df_dec/onnx::Conv_315",
 ];
 
+/// Matmul weights (grouped-linear + GRU input `W`) — held as f16.
+const MATS: [&str; 8] = [
+    "erb_dec/emb_gru.linear_in.0.weight",
+    "erb_dec/emb_gru.linear_out.0.weight",
+    "erb_dec/onnx::GRU_291",
+    "df_dec/df_gru.linear_in.0.weight",
+    "df_dec/df_out.0.weight",
+    "df_dec/onnx::GRU_337",
+    "df_dec/onnx::GRU_357",
+    "df_dec/onnx::GRU_377",
+];
+
 const GRU_R: [&str; 4] = [
     "erb_dec/onnx::GRU_292",
     "df_dec/onnx::GRU_338",
@@ -47,7 +59,7 @@ pub struct Decoders {
 impl Decoders {
     /// Build the decoders from shared weights, validating and packing what they need.
     pub fn new(weights: Arc<Weights>) -> Result<Self, Error> {
-        Ok(Decoders { bank: WeightBank::new(weights, &REQUIRED, &GRU_R)? })
+        Ok(Decoders { bank: WeightBank::new(weights, &REQUIRED, &MATS, &GRU_R)? })
     }
 
     /// ERB decoder: `emb` + skip connections -> a `[T, 32]` sigmoid spectral mask.
