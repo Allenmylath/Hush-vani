@@ -274,6 +274,31 @@ fit the 16 ymm registers, giving 13 memory ops per 12 vector-FMAs instead of 9 p
   Kept behind `hush-vani-core/f16-kernels`: they do halve resident weight memory
   (9.1 → 4.6 MB), a real trade for a memory-tight target, just not a speed one.
 
+### The int8 control experiment — which confirms all of the above
+
+If the kernels are issue-bound, the lever is **fewer instructions**, not fewer bytes. AVX-VNNI's
+`vpdpbusd` does **32 int8 MACs in one instruction** against an f32 FMA's 8 — 4× fewer
+instructions for identical work. Prediction: int8 should be *much* faster where f16 was slower.
+
+On the recurrent matvec (`hush-kernel-ab`, paired, real weights):
+
+| weights | kernel throughput | vs f32 | model size | end-to-end SI-SDR |
+|---|---|---|---|---|
+| **f32** | 41.3 GFMA/s | 1.00x | 9.12 MB | **129.7 dB** (exact) |
+| **f16** | 32.7 GFMA/s | **0.85x** 🔻 | 4.56 MB | **75.5 dB** (inaudible) |
+| **int8** (VNNI) | **144.5 GFMA/s** | **3.50x** 🔺 | 2.28 MB | 30.0 dB (audible) |
+
+int8 exceeds the f32 FMA *peak* (~56 GFMA/s) — impossible for a bandwidth story, inevitable
+for an instruction-count one. Same data volume argument, opposite result, because the
+instruction count went the other way. That settles it: **these kernels are bound by issue
+rate, and the only currency that buys speed is instructions.**
+
+int8 is not shipped: 30.0 dB is audible (well under the ~67 dB a 16-bit WAV holds). The
+culprit is the weight distribution — those ±31 outliers force a per-tensor scale that wastes
+the int8 range on the 99% of weights inside ±0.23. Per-*channel* scales (or keeping outlier
+rows in higher precision) is the standard fix and would likely make this shippable; it is the
+obvious next move for anyone who wants the 3.5×.
+
 Every reverted change is listed rather than quietly dropped — including one, weight
 packing, that was reverted *in error* and later reinstated once measured properly.
 

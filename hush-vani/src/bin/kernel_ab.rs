@@ -289,6 +289,133 @@ fn f16_ab() {
        || gemm_nt_f16(&x, T, k, &w16, rows, &bias, &mut g2));
 }
 
+// ---------------------------------------------------------------- int8 (AVX-VNNI)
+//
+// If the kernels are ISSUE-bound (not bandwidth-bound), the lever is fewer instructions.
+// `vpdpbusd` does 32 int8 MACs in ONE instruction; an f32 FMA does 8. So int8 needs 4x
+// fewer instructions for the same work -- the decisive test of the issue-bound theory.
+//
+// vpdpbusd is u8 x i8. Activations are signed, so shift them: u = a + 128, and
+//   sum(a_i*w_i) = dpbusd(u, w) - 128 * rowsum(w)
+// with rowsum(w) precomputed per output row.
+
+/// Pack int8 weights into PANEL-row panels of 32-byte chunks (matches the kernel's stride).
+#[cfg(target_arch = "x86_64")]
+fn pack_i8(m: &[f32], rows: usize, k: usize) -> (Vec<i8>, Vec<i32>, f32) {
+    const PANEL: usize = 12;
+    let amax = m.iter().fold(0f32, |a, &b| a.max(b.abs()));
+    let scale = amax / 127.0;
+    let q: Vec<i8> = m.iter().map(|&v| (v / scale).round().clamp(-127.0, 127.0) as i8).collect();
+    let rowsum: Vec<i32> = (0..rows)
+        .map(|j| q[j * k..(j + 1) * k].iter().map(|&v| v as i32).sum())
+        .collect();
+    let mut p = vec![0i8; rows * k];
+    for jb in 0..rows / PANEL {
+        for c in 0..k / 32 {
+            for l in 0..PANEL {
+                let s = (jb * PANEL + l) * k + c * 32;
+                let d = jb * PANEL * k + c * 32 * PANEL + l * 32;
+                p[d..d + 32].copy_from_slice(&q[s..s + 32]);
+            }
+        }
+    }
+    (p, rowsum, scale)
+}
+
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,avxvnni")]
+unsafe fn hsum_i32(v: std::arch::x86_64::__m256i) -> i32 {
+    use std::arch::x86_64::*;
+    let s = _mm_add_epi32(_mm256_castsi256_si128(v), _mm256_extracti128_si256(v, 1));
+    let s = _mm_hadd_epi32(s, s);
+    let s = _mm_hadd_epi32(s, s);
+    _mm_cvtsi128_si32(s)
+}
+
+/// out[j] = sum_i w[j][i] * x[i], with int8 weights and int8 activations.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,avxvnni")]
+unsafe fn matvec_packed_i8(
+    p: &[i8], rows: usize, k: usize, xu: &[u8], rowsum: &[i32], wscale: f32, xscale: f32,
+    out: &mut [f32],
+) {
+    use std::arch::x86_64::*;
+    const PANEL: usize = 12;
+    let px = xu.as_ptr();
+    let s = wscale * xscale;
+    for jb in 0..rows / PANEL {
+        let mut acc = [_mm256_setzero_si256(); PANEL];
+        let panel = p.as_ptr().add(jb * PANEL * k);
+        for c in 0..k / 32 {
+            let xv = _mm256_loadu_si256(px.add(c * 32) as *const __m256i);
+            let base = panel.add(c * 32 * PANEL);
+            for (l, a) in acc.iter_mut().enumerate() {
+                let wv = _mm256_loadu_si256(base.add(l * 32) as *const __m256i);
+                *a = _mm256_dpbusd_avx_epi32(*a, xv, wv);
+            }
+        }
+        for l in 0..PANEL {
+            let j = jb * PANEL + l;
+            // undo the +128 activation shift
+            let dot = hsum_i32(acc[l]) - 128 * rowsum[j];
+            out[j] = dot as f32 * s;
+        }
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+fn int8_ab() {
+    use hush_vani_core::alloc::AlignedVec;
+    use hush_vani_core::nn::{matvec_packed, pack_rows};
+    if !std::arch::is_x86_feature_detected!("avxvnni") {
+        println!("\n(no AVX-VNNI; skipping int8)");
+        return;
+    }
+    let (rows, k) = (768usize, 256usize);
+
+    // Use a REAL recurrent matrix: synthetic data is well-behaved and flatters int8, while
+    // the actual weights carry the +/-31 outliers that wreck a single per-tensor scale.
+    let real = hush_vani_core::Weights::from_paths(
+        concat!(env!("CARGO_MANIFEST_DIR"), "/assets/weights.bin"),
+        concat!(env!("CARGO_MANIFEST_DIR"), "/assets/weights.txt"),
+    )
+    .ok()
+    .and_then(|wt| wt.get("enc/onnx::GRU_361").ok().map(AlignedVec::from_slice));
+    let (w, src) = match real {
+        Some(r) if r.len() == rows * k => (r, "real enc GRU_361"),
+        _ => (AlignedVec::from_slice(&rnd(rows * k, 41)), "synthetic"),
+    };
+    println!("\n[int8 accuracy measured on: {src} weights]");
+
+    let rp = pack_rows(&w, rows, k);
+    let (p8, rowsum, wscale) = pack_i8(&w, rows, k);
+
+    // activation: quantise h to int8, then shift to u8
+    let hf = AlignedVec::from_slice(&rnd(k, 42));
+    let hamax = hf.iter().fold(0f32, |a, &b| a.max(b.abs()));
+    let xscale = hamax / 127.0;
+    let xu: Vec<u8> = hf.iter()
+        .map(|&v| ((v / xscale).round().clamp(-127.0, 127.0) as i32 + 128) as u8)
+        .collect();
+
+    let mut o32 = vec![0f32; rows];
+    let mut o8 = vec![0f32; rows];
+    matvec_packed(&rp, rows, k, &hf, &mut o32);
+    unsafe { matvec_packed_i8(&p8, rows, k, &xu, &rowsum, wscale, xscale, &mut o8) };
+
+    // how wrong is int8, on this kernel alone?
+    let num: f64 = o32.iter().map(|&v| (v as f64) * (v as f64)).sum();
+    let den: f64 = o32.iter().zip(&o8).map(|(&a, &b)| ((a - b) as f64).powi(2)).sum();
+    let snr = 10.0 * (num / (den + 1e-30)).log10();
+
+    let fmas = (rows * k * T) as f64;
+    println!("\nint8 + AVX-VNNI (vpdpbusd: 32 MACs/instr vs 8 for f32 FMA):");
+    ab("recurrent matvec int8", fmas,
+       || for _ in 0..T { matvec_packed(&rp, rows, k, &hf, &mut o32) },
+       || for _ in 0..T { unsafe { matvec_packed_i8(&p8, rows, k, &xu, &rowsum, wscale, xscale, &mut o8) } });
+    println!("  int8 kernel accuracy vs f32: {snr:.1} dB SNR (weights AND activations int8)");
+}
+
 fn main() {
     println!("interleaved old-vs-new, medians (ratio >1 = new is faster)\n");
 
@@ -321,5 +448,6 @@ fn main() {
 
     matvec_ab();
     f16_ab();
+    int8_ab();
 }
 
