@@ -205,6 +205,49 @@ said "noisier", but the number that mattered was **noise removed**, where per-te
 Every reverted change is listed rather than quietly dropped — including one, weight
 packing, that was reverted *in error* and later reinstated once measured properly.
 
+### `f32::mul_add` made every non-AVX2 target 3x slower
+
+Found by asking why the wasm build ran at 1.8x realtime when it should have been ~10x.
+
+The scalar fallbacks — the ones that run on wasm, on aarch64, and on pre-Haswell x86 — were
+all written with `a.mul_add(b, c)`. That is a *fused* multiply-add: one rounding instead of
+two, and free **if the target has an FMA instruction at compile time**. Neither condition
+held. This crate dispatches AVX2 at *runtime*, so it is built without `-C target-feature=+fma`;
+and wasm has no FMA instruction at all. On both, `mul_add` cannot lower to hardware, so it
+calls the software `fmaf`, which computes the exact double-width product and rounds once.
+
+Measured on a 256-wide f32 dot product, same source both sides:
+
+| | plain `a*b + c` | `f32::mul_add` | |
+|---|---|---|---|
+| native (no `+fma`) | 5.9 GFLOP/s | 2.2 GFLOP/s | **2.6x slower** |
+| wasm32 | 4.3 GFLOP/s | 0.53 GFLOP/s | **8.0x slower** |
+
+Nine call sites, every one of them in a hot kernel: `dot_scalar`, `axpy`, `matvec_packed`,
+`gemm_nt`, `grouped_linear`, `pointwise`, and the GRU gate update. Replacing them with plain
+`a * b + c` took a 5 s clip on wasm from **2802 ms to 885 ms (3.2x)**, with bit-identical
+output quality (35.8 dB of noise removed, unchanged).
+
+The AVX2 kernels in `mod x86` still use `mul_add` and should: they live inside
+`#[target_feature(enable = "avx2,fma")]`, where it *is* a single `vfmadd` and the extra
+precision really is free. The cost of the change is one extra rounding per MAC in the scalar
+path — which already sums in a different order from the vector path anyway. End-to-end
+against onnxruntime is unchanged at 129.7 dB SI-SDR.
+
+The general lesson, and it is the same one as the f16 kernels above: **an intrinsic that is
+free on the target you benchmark can be catastrophic on the target you don't.** `mul_add` is
+strictly better on paper — fewer roundings, fewer instructions — and it was silently costing
+8x everywhere the benchmark never looked.
+
+### What wasm costs after that
+
+Still ~5.7x realtime against ~100x native. What remains is the honest cost of no SIMD: the
+portable path does one f32 at a time where AVX2 does eight. `-C target-feature=+simd128` buys
+**nothing** (2802 → 2869 ms, i.e. noise), for exactly the reason the x86 kernels are
+hand-written: LLVM will not auto-vectorise a float dot product, because IEEE ordering forbids
+reassociating the adds. Explicit `core::arch::wasm32` v128 kernels would slot in beside the
+AVX2 ones; 4 lanes instead of 8 suggests ~3-4x, i.e. ~20x realtime.
+
 ### A bug this found: subnormal f16 decoded 2× small
 
 Storing block scales as f16 exposed a latent bug in `f16_to_f32`: for **2046 of the 2048

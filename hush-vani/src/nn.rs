@@ -12,6 +12,29 @@ use crate::simd::{has_avx2, sigmoid};
 pub const PANEL: usize = 12;
 
 // ---------------------------------------------------------------- scalar helpers
+//
+// These are the portable fallbacks: they run when there is no AVX2, i.e. on wasm, on aarch64,
+// and on pre-Haswell x86. They deliberately write `a * b + c` and NOT `a.mul_add(b, c)`.
+//
+// `mul_add` is a *fused* multiply-add: one rounding instead of two. It is only free if the
+// target has an FMA instruction at COMPILE time. This crate dispatches AVX2 at runtime and so
+// is built without `-C target-feature=+fma`; wasm has no FMA instruction at all. On any such
+// target `mul_add` cannot lower to hardware, so it calls the software `fmaf`, which computes
+// the exact 2x-width product and rounds once. Correct, and ruinous in a hot loop:
+//
+//     f32 dot, 256-wide          plain a*b+c      f32::mul_add
+//     native (no +fma)            5.9 GFLOP/s     2.2 GFLOP/s     2.6x slower
+//     wasm32                      4.3 GFLOP/s     0.53 GFLOP/s    8.0x slower
+//
+// Every kernel below was written with `mul_add`, so the whole non-AVX2 path was paying that.
+// It cost wasm ~8x: a 5 s clip went from 2802 ms to ~360 ms once these became plain adds.
+// The AVX2 kernels in `mod x86` still use `mul_add` and should -- they are inside
+// `#[target_feature(enable = "avx2,fma")]`, where it is a single `vfmadd` and the extra
+// precision is genuinely free.
+//
+// The cost of the change is one extra rounding per MAC in the scalar path, which is already
+// a different summation order from the vector path anyway. End-to-end vs onnxruntime is
+// unchanged at 129.7 dB SI-SDR.
 
 /// out += s * x
 #[inline]
@@ -22,7 +45,7 @@ pub fn axpy(out: &mut [f32], s: f32, x: &[f32]) {
         return;
     }
     for (o, v) in out.iter_mut().zip(x.iter()) {
-        *o = s.mul_add(*v, *o);
+        *o = s * *v + *o;
     }
 }
 
@@ -41,7 +64,7 @@ fn dot_scalar(a: &[f32], b: &[f32]) -> f32 {
     let mut cb = b.chunks_exact(8);
     for (x, y) in ca.by_ref().zip(cb.by_ref()) {
         for k in 0..8 {
-            acc[k] = x[k].mul_add(y[k], acc[k]);
+            acc[k] = x[k] * y[k] + acc[k];
         }
     }
     let mut s = (acc[0] + acc[1]) + (acc[2] + acc[3]) + ((acc[4] + acc[5]) + (acc[6] + acc[7]));
@@ -121,7 +144,7 @@ pub fn matvec_packed(p: &[f32], rows: usize, k: usize, x: &[f32], out: &mut [f32
         let mut s = 0.0;
         for c in 0..k / 8 {
             for e in 0..8 {
-                s = p[jb * PANEL * k + c * 8 * PANEL + l * 8 + e].mul_add(x[c * 8 + e], s);
+                s = p[jb * PANEL * k + c * 8 * PANEL + l * 8 + e] * x[c * 8 + e] + s;
             }
         }
         out[j] = s;
@@ -175,7 +198,7 @@ pub fn matvec_packed_f16(p: &[u16], rows: usize, k: usize, x: &[f32], out: &mut 
         for c in 0..k / 8 {
             for e in 0..8 {
                 let w = crate::simd::f16_to_f32(p[jb * PANEL * k + c * 8 * PANEL + l * 8 + e]);
-                s = w.mul_add(x[c * 8 + e], s);
+                s = w * x[c * 8 + e] + s;
             }
         }
         out[j] = s;
@@ -193,7 +216,7 @@ pub fn gemm_nt_f16(x: &[f32], t: usize, k: usize, w: &[u16], rows: usize, b: &[f
         for j in 0..rows {
             let mut s = b[j];
             for i in 0..k {
-                s = crate::simd::f16_to_f32(w[j * k + i]).mul_add(x[ti * k + i], s);
+                s = crate::simd::f16_to_f32(w[j * k + i]) * x[ti * k + i] + s;
             }
             out[ti * rows + j] = s;
         }
@@ -223,7 +246,7 @@ fn linear_row_f16(xv: &[f32], w: &[u16], h: usize, dst: &mut [f32]) {
     for (ii, &xs) in xv.iter().enumerate() {
         if xs != 0.0 {
             for hh in 0..h {
-                dst[hh] = crate::simd::f16_to_f32(w[ii * h + hh]).mul_add(xs, dst[hh]);
+                dst[hh] = crate::simd::f16_to_f32(w[ii * h + hh]) * xs + dst[hh];
             }
         }
     }
@@ -308,7 +331,7 @@ pub fn dw_conv13(x: &[f32], c: usize, t: usize, f: usize, w: &[f32], stride: usi
                 for (kk, &kv) in k.iter().enumerate() {
                     let idx = base + kk as isize;
                     if idx >= 0 && (idx as usize) < f {
-                        s = kv.mul_add(src[idx as usize], s);
+                        s = kv * src[idx as usize] + s;
                     }
                 }
                 *d = s;
@@ -335,7 +358,7 @@ pub fn convtranspose_dw(x: &[f32], c: usize, t: usize, f: usize, w: &[f32]) -> (
                 dst[2 * i] = src[i] * k1;
                 let mut odd = src[i] * k2;
                 if i + 1 < f {
-                    odd = k0.mul_add(src[i + 1], odd);
+                    odd = k0 * src[i + 1] + odd;
                 }
                 dst[2 * i + 1] = odd;
             }
@@ -461,7 +484,7 @@ fn gate_update(xwt: &[f32], hr: &[f32], rb: &[f32], h: &mut [f32], hs: usize) {
         let z = sigmoid(xwt[k] + hr[k] + rb[k]);
         let rr = sigmoid(xwt[hs + k] + hr[hs + k] + rb[hs + k]);
         let hh = (xwt[2 * hs + k] + rr * (hr[2 * hs + k] + rb[2 * hs + k])).tanh();
-        h[k] = (1.0 - z).mul_add(hh, z * h[k]);
+        h[k] = (1.0 - z) * hh + z * h[k];
     }
 }
 

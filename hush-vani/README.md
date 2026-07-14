@@ -113,11 +113,40 @@ is already held in the right place, so it is a small change, just not one that's
 | realtime factor | ~99x | ~112x |
 
 Model load is a one-time ~10 ms. AVX2 + FMA kernels are selected **at runtime** — a stock
-`cargo build --release` gets them, no `RUSTFLAGS` needed. On a CPU without AVX2 it falls
-back to portable scalar code, roughly 4x slower.
+`cargo build --release` gets them, no `RUSTFLAGS` needed. Without AVX2 it falls back to
+portable scalar code, several times slower.
 
 For the last few percent, `RUSTFLAGS="-C target-cpu=native"` helps the remaining scalar code
 (depthwise convs, reshapes) by ~8%.
+
+## WebAssembly
+
+It works, with no `wasm-bindgen` and no JS glue — the module has **zero imports**:
+
+```toml
+[dependencies]
+hush-vani = { version = "0.1", default-features = false }   # drop the `cli` feature
+```
+
+```bash
+cargo build --release --target wasm32-unknown-unknown
+```
+
+| | native (AVX2) | wasm |
+|---|---|---|
+| 5 s clip | 51 ms | **885 ms** |
+| realtime factor | ~100x | **~5.7x** |
+| module size | — | 2.8 MB (mostly weights) |
+
+Correct output — it removes the same noise as native. **Fine for offline work** (denoise a
+recorded clip in a browser); a live mic is tight but no longer out of reach.
+
+Two things to know. There are no wasm SIMD kernels yet, so it runs the portable scalar path;
+`-C target-feature=+simd128` does **not** help, because LLVM will not auto-vectorise a float
+dot product (see [ENGINEERING.md](ENGINEERING.md) — the same reason the x86 kernels are
+hand-written intrinsics). Explicit `core::arch::wasm32` v128 kernels are the obvious next
+step and would slot in beside the AVX2 ones. And the 2.8 MB module is almost entirely
+weights, which is exactly why they are int8 — f32 would make this a 9.5 MB download.
 
 ## Weights and precision
 
