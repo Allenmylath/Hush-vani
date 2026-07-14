@@ -10,8 +10,8 @@ USAGE:
     hush-vani <input.wav> <output.wav> [OPTIONS]
 
 OPTIONS:
-    -w, --weights <DIR>   directory holding weights.bin and weights.txt
-                          [default: $HUSH_WEIGHTS, else the current directory]
+    -w, --weights <DIR>   load weights.bin + weights.txt from DIR instead of the
+                          int8 weights built into this binary [env: HUSH_WEIGHTS]
     -a, --atten <DB>      limit suppression to this many dB (e.g. 12); default: unlimited
     -h, --help            print this help
 
@@ -25,12 +25,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let mut positional = Vec::new();
-    let mut weights_dir = std::env::var("HUSH_WEIGHTS").unwrap_or_else(|_| ".".into());
+    // None => use the weights embedded in the binary. --weights (or HUSH_WEIGHTS) overrides,
+    // which is how you run f32/f16 weights, or your own.
+    let mut weights_dir: Option<String> = std::env::var("HUSH_WEIGHTS").ok();
     let mut atten: Option<f32> = None;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
-            "-w" | "--weights" => weights_dir = it.next().ok_or("--weights needs a directory")?.clone(),
+            "-w" | "--weights" => {
+                weights_dir = Some(it.next().ok_or("--weights needs a directory")?.clone())
+            }
             "-a" | "--atten" => atten = Some(it.next().ok_or("--atten needs a number")?.parse()?),
             _ if a.starts_with('-') => return Err(format!("unknown flag {a}").into()),
             _ => positional.push(a.clone()),
@@ -40,10 +44,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Err("expected <input.wav> <output.wav>; see --help".into());
     }
 
-    let hush = Hush::from_paths(
-        format!("{weights_dir}/weights.bin"),
-        format!("{weights_dir}/weights.txt"),
-    )?;
+    let hush = match &weights_dir {
+        Some(d) => Hush::from_paths(format!("{d}/weights.bin"), format!("{d}/weights.txt"))?,
+        None => Hush::new()?,
+    };
 
     let mut rd = hound::WavReader::open(&positional[0])?;
     let spec = rd.spec();

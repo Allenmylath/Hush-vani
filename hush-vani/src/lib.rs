@@ -242,4 +242,37 @@ mod tests {
         assert_eq!(Hush::LATENCY_SAMPLES, 160);
         assert_eq!(Hush::FRAME_SAMPLES, 160);
     }
+
+    /// The README tells people they can share one `Hush` across threads. The weight arena is
+    /// behind raw pointers with hand-written `unsafe impl Send/Sync`, so nothing but a check
+    /// like this keeps that promise honest if the internals change.
+    #[test]
+    fn hush_is_shareable_across_threads() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<Hush>();
+        assert_send_sync::<Error>();
+    }
+
+    /// The whole promise of the crate: no files, no setup. If the embedded blob and the
+    /// manifest ever drift apart, this is where it surfaces.
+    #[test]
+    fn embedded_weights_load_and_enhance() {
+        let hush = Hush::new().expect("embedded weights must load");
+
+        // 1 s of quiet noise; we only care that the pipeline runs and stays finite.
+        let noisy: Vec<f32> = (0..16_000).map(|i| ((i * 7919 % 1000) as f32 / 1000.0 - 0.5) * 0.05).collect();
+        let clean = hush.enhance(&noisy).expect("enhance");
+
+        assert_eq!(clean.len(), noisy.len() / 160 * 160, "output length is whole frames");
+        assert!(clean.iter().all(|s| s.is_finite()), "output has NaN/inf");
+
+        let snr = hush.local_snr(&noisy).expect("local_snr");
+        assert_eq!(snr.len(), noisy.len() / 160, "one lsnr value per 10 ms frame");
+    }
+
+    #[test]
+    fn enhance_rejects_a_partial_frame() {
+        let hush = Hush::new().unwrap();
+        assert!(matches!(hush.enhance(&[0.0; 159]), Err(Error::TooShort { .. })));
+    }
 }

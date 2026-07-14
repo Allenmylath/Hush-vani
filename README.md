@@ -15,11 +15,14 @@ Runtime-dispatched AVX2, no ONNX runtime, no BLAS, no Python at inference.
 
 The Rust output matches the ONNX Runtime pipeline to float32 rounding (**SI-SDR 129.7 dB**),
 and is faster: **1.07x on the neural network**, 1.12x on the full pipeline, single-threaded,
-measured with a paired interleaved benchmark. See [`hush-vani/README.md`](hush-vani/README.md)
-for the numbers and how they were obtained.
+measured with a paired interleaved benchmark.
 
 On the reference clip the model drops the noise floor by **42 dB** while costing speech only
-−3.4 dB, at ~110x realtime on one core (5 s of audio in ~45 ms).
+−3.4 dB, at ~100x realtime on one core.
+
+- **Using the crate** → [`hush-vani/README.md`](hush-vani/README.md)
+- **How it was built, measured, and optimised** (including the experiments that lost) →
+  [`hush-vani/ENGINEERING.md`](hush-vani/ENGINEERING.md)
 
 ## Quick start
 
@@ -33,7 +36,6 @@ use hush_vani::Hush;
 
 let hush = Hush::new()?;             // weights are embedded — nothing to download
 let clean = hush.enhance(&noisy)?;   // mono 16 kHz f32 in [-1, 1]
-# Ok::<(), hush_vani::Error>(())
 ```
 
 The embedded weights are **int8** — 2.44 MB, a quarter of the original f32. They are
