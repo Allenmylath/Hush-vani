@@ -5,11 +5,11 @@ implementation of [`weya-ai/hush`](https://huggingface.co/weya-ai/hush) (a DeepF
 derivative). STFT, ERB features, all three neural graphs, deep filtering and overlap-add
 synthesis.
 
-**No ONNX runtime, no BLAS, no Python.** Built on
-[`hush-vani-core`](https://crates.io/crates/hush-vani-core), which holds the shared DSP/NN
-kernels and the model's encoder; this crate adds the decoders, the merge, and the `Hush` API.
+**No ONNX runtime, no BLAS, no Python. One crate, weights included.**
 
-- Output matches the reference ONNX Runtime pipeline to float32 rounding (**SI-SDR 129.7 dB**).
+- **Weights built in** — 2.44 MB of int8, embedded. Nothing to download or export.
+- Output matches the reference ONNX Runtime pipeline to float32 rounding (**SI-SDR 129.7 dB**)
+  when run on f32 weights.
 - ~**110x faster than real time** on one core (5 s of audio in ~45 ms), and measurably
   faster than onnxruntime on the same machine ([see below](#speed-vs-onnx-runtime)).
 - AVX2 + FMA kernels dispatched at **runtime** — no special `RUSTFLAGS` required; portable
@@ -24,7 +24,7 @@ hush-vani = "0.1"
 ```rust
 use hush_vani::Hush;
 
-let hush = Hush::from_paths("weights.bin", "weights.txt")?;
+let hush = Hush::new()?;             // weights are embedded in the crate
 let clean = hush.enhance(&noisy)?;   // mono 16 kHz f32 in [-1, 1]
 # Ok::<(), hush_vani::Error>(())
 ```
@@ -33,21 +33,56 @@ Or from the command line:
 
 ```
 cargo install hush-vani
-hush-vani noisy.wav clean.wav --weights ./weights
+hush-vani noisy.wav clean.wav
 ```
 
 ## Weights
 
-Weights are **not bundled** — 9 MB, and they carry the upstream model's license. Generate
-them once from the published ONNX bundle:
+Embedded in the crate: the [`weya-ai/hush`](https://huggingface.co/weya-ai/hush) weights
+(Apache-2.0, see `NOTICE`), quantised to **int8** — 2.44 MB, against 4.56 MB for float16 and
+9.12 MB for the original float32.
+
+int8 here is a **storage format, not a compute format**. The weights are dequantised to f32
+at load and run through the same f32 kernels, so it is neither faster nor slower than f32 —
+it just makes the crate a quarter of the size. Measured on six real recordings
+(`tools/bench_samples.py`):
+
+| weights | noise removed | SI-SDR vs f32 | error level | speed | size |
+|---|---|---|---|---|---|
+| f32 | +43.4 dB | *(reference)* | — | 236 ms | 9.12 MB |
+| f16 | +43.4 dB | 67.0 dB | −94.6 dBFS | 194 ms | 4.56 MB |
+| **int8** *(shipped)* | **+43.4 dB** | 44.0 dB | −72.4 dBFS | 194 ms | **2.44 MB** |
+
+**int8 removes exactly as much noise as full f32 weights** — quantisation costs nothing in
+the thing the model is actually for. What it costs is a noise floor: its output sits 44 dB
+SI-SDR from f32, an error at −72.4 dBFS. That is inaudible at any normal listening level,
+but unlike f16 (−94.6 dBFS, below what a 16-bit WAV can even *store*) it is not literally
+unrepresentable. If you want that last 22 dB, or bit-exactness with ORT, export other
+weights and load them yourself:
 
 ```
 pip install onnx
-python tools/export_weights.py     # -> assets/weights.bin, assets/weights.txt
+python tools/export_weights.py --f16 --out weights.f16   # or no flag for f32
 ```
 
-Then load with `Hush::from_paths(..)`, or embed with `include_bytes!` and
-`Hush::from_bytes(..)`.
+```rust
+let hush = Hush::from_paths("weights.bin", "weights.txt")?;   // or Hush::from_bytes
+```
+
+### Why block scales
+
+Each group of 64 weights along a matmul row carries its own f32 scale. One scale per
+*tensor* — the obvious first thing to try, and what the [first int8
+attempt](#the-int8-control-experiment) did — has to cover the GRUs' ±31 outliers alongside
+the 99% of weights inside ±0.23. That model removes **2.1 dB less noise** than f32 on
+average and **8.4 dB less** on one sample: the quantisation made it worse at its job, not
+merely noisier. Block scales cost 159 KB and give all of it back.
+
+The scales are f32, not f16, deliberately: a scale is `amax/127`, and for blocks whose
+weights all sit near 1e-6 that lands under f16's smallest subnormal. 425 of the 39,688
+scales flush to zero in f16 — silently zeroing the 64 weights each one covers. It doesn't
+move the aggregate SNR, but the on-disk format is permanent, and 80 KB is not worth carrying
+a class of underflow bug.
 
 ## Audio format
 
@@ -271,10 +306,11 @@ fit the 16 ymm registers, giving 13 memory ops per 12 vector-FMAs instead of 9 p
   in the GEMM vs 1-per-1 in the matvec — predicted the GEMM would be fine. It was worse. The
   data corrected that too.)
 
-  Kept behind `hush-vani-core/f16-kernels`: they do halve resident weight memory
+  Kept behind the `f16-kernels` feature: they do halve resident weight memory
   (9.1 → 4.6 MB), a real trade for a memory-tight target, just not a speed one.
 
-### The int8 control experiment — which confirms all of the above
+### The int8 control experiment
+<a id="the-int8-control-experiment"></a>
 
 If the kernels are issue-bound, the lever is **fewer instructions**, not fewer bytes. AVX-VNNI's
 `vpdpbusd` does **32 int8 MACs in one instruction** against an f32 FMA's 8 — 4× fewer
@@ -282,25 +318,47 @@ instructions for identical work. Prediction: int8 should be *much* faster where 
 
 On the recurrent matvec (`hush-kernel-ab`, paired, real weights):
 
-| weights | kernel throughput | vs f32 | model size | end-to-end SI-SDR |
-|---|---|---|---|---|
-| **f32** | 41.3 GFMA/s | 1.00x | 9.12 MB | **129.7 dB** (exact) |
-| **f16** | 32.7 GFMA/s | **0.85x** 🔻 | 4.56 MB | **75.5 dB** (inaudible) |
-| **int8** (VNNI) | **144.5 GFMA/s** | **3.50x** 🔺 | 2.28 MB | 30.0 dB (audible) |
+| weights | kernel throughput | vs f32 | model size |
+|---|---|---|---|
+| **f32** | 41.3 GFMA/s | 1.00x | 9.12 MB |
+| **f16** | 32.7 GFMA/s | **0.85x** 🔻 | 4.56 MB |
+| **int8** (VNNI) | **144.5 GFMA/s** | **3.50x** 🔺 | 2.28 MB |
 
 int8 exceeds the f32 FMA *peak* (~56 GFMA/s) — impossible for a bandwidth story, inevitable
 for an instruction-count one. Same data volume argument, opposite result, because the
 instruction count went the other way. That settles it: **these kernels are bound by issue
 rate, and the only currency that buys speed is instructions.**
 
-int8 is not shipped: 30.0 dB is audible (well under the ~67 dB a 16-bit WAV holds). The
-culprit is the weight distribution — those ±31 outliers force a per-tensor scale that wastes
-the int8 range on the 99% of weights inside ±0.23. Per-*channel* scales (or keeping outlier
-rows in higher precision) is the standard fix and would likely make this shippable; it is the
-obvious next move for anyone who wants the 3.5×.
+**This kernel is not what ships, and the 3.5× is not claimed anywhere above.** It quantises
+the *activations* too (that is what `vpdpbusd` requires), it needs AVX-VNNI (Ice Lake / Zen 4
+and later), and it lives in the benchmark binary. The shipped int8 is a *storage* format:
+dequantised at load, run on the f32 kernels, exactly the same speed as f32. Turning this
+control experiment into a real compute path — measuring what activation quantisation costs,
+and writing an AVX2 fallback for the CPUs without VNNI — is the open next step.
+
+The first version of this experiment used one scale per tensor and reported "30.0 dB
+end-to-end, audible, not shippable". That verdict was about the *scaling scheme*, not about
+int8: with 64-wide block scales the same 8-bit weights remove exactly as much noise as f32
+(see [Weights](#weights)). What made the difference was measuring the right thing — SI-SDR
+said "noisier", but the number that mattered was **noise removed**, where per-tensor int8 was
+2.1 dB *worse at the job* while merely sounding grittier.
 
 Every reverted change is listed rather than quietly dropped — including one, weight
 packing, that was reverted *in error* and later reinstated once measured properly.
+
+### A bug this found: subnormal f16 decoded 2× small
+
+Storing block scales as f16 exposed a latent bug in `f16_to_f32`: for **2046 of the 2048
+subnormal** bit patterns it returned exactly half the right value (the renormalising shift
+was off by one and left the implicit leading 1 in the mantissa field). Normals were all
+correct, and the round-trip test stepped `x` by 0.001 — never landing on a subnormal — so it
+had always passed. The hardware `vcvtph2ps` used by the f16 *kernels* gets this right, so
+the scalar loader and the SIMD kernels had been quietly disagreeing.
+
+It barely moved the f16 weights (those values are tiny by definition: SI-SDR 66.9 → 67.0 dB),
+but a bad *scale* corrupts all 64 weights in its block, which is how it finally showed up.
+Fixed, and now checked exhaustively over all 65,536 bit patterns against the definition
+rather than a round-trip.
 
 ### Where the remaining time goes
 
@@ -344,24 +402,31 @@ a Mann-Whitney U test rather than a single median.
 
 ## Layout
 
-**Published crate** (`cargo package` → 19 files, 38 KB compressed):
+**Published crate** (`cargo package` → 27 files, 2.3 MB compressed, nearly all of it weights):
 
 - `src/lib.rs` — public API: `Hush`, `Error`.
+- `data/weights.{bin,txt}` — the embedded int8 weights and their manifest.
 - `src/dsp.rs` — vorbis window, STFT (`rfft/N`), ERB bands, exponential normalisers, ISTFT,
   deep-filter application. Formulas reverse-engineered from `libdf` (see `tools/probe_dsp.py`).
 - `src/nn.rs` — AVX2 `dot`/`matvec`/`gemm_nt`, grouped/depthwise/pointwise convs, depthwise
   freq ConvTranspose, grouped linear, ONNX GRU (`linear_before_reset=1`). Runtime-dispatched.
-- `src/simd.rs` — 8-wide `exp`/`sigmoid`/`tanh` (Cephes polynomials, ~1e-7 relative) and the
-  cached AVX2 capability check.
-- `src/model.rs` — the three graphs, mirroring `tools/{enc,erb_dec,df_dec}.txt`.
-- `src/weights.rs`, `src/alloc.rs` — 64-byte-aligned weight arena, name-addressed.
+- `src/simd.rs` — 8-wide `exp`/`sigmoid`/`tanh` (Cephes polynomials, ~1e-7 relative), f16
+  conversion, and the cached AVX2 capability check.
+- `src/encoder.rs`, `src/decoders.rs`, `src/bank.rs` — the three graphs, mirroring
+  `tools/{enc,erb_dec,df_dec}.txt`, over a shared weight bank.
+- `src/weights.rs`, `src/alloc.rs` — 64-byte-aligned weight arena, name-addressed; f32 / f16 /
+  int8 blobs all decode to the same f32 arena here.
 - `src/bin/cli.rs` — the `hush-vani` binary.
 
 **Repo only** (excluded from the crate):
 
-- `assets/` — `weights.bin` + `weights.txt`, and ORT fixtures for `verify`.
+- `assets/` — f32/f16 weight blobs and ORT fixtures for `verify`.
 - `src/bin/{devtool,profile,kernel_ab,micro,features}.rs` — gated behind `--features devtools`.
-- `tools/export_weights.py` — ONNX initializers → `assets/weights.{bin,txt}`.
+- `tools/export_weights.py` — ONNX initializers → `weights.{bin,txt}` (`--f16`, `--int8`).
+- `tools/quant_schemes.py`, `tools/quant_sweep.py` — how the int8 block size and scale dtype
+  were chosen: quantise in numpy, run the real kernels, measure the audio.
+- `tools/verify_int8.py` — asserts the Rust int8 loader reproduces that simulation exactly.
+- `tools/bench_samples.py` — f32 / f16 / int8 over six real DeepFilterNet2 demo recordings.
 - `tools/export_fixtures.py` — ORT intermediates → `assets/*.bin` (for `verify`).
 - `tools/dump_graph.py` — human-readable ONNX graph dump.
 - `tools/probe_dsp.py`, `tools/probe_synth.py` — how the `libdf` DSP was reverse-engineered.
@@ -376,6 +441,8 @@ Python is only ever a build/verification step; it never runs at inference time.
   `#[cfg(target_feature = "avx2")]`, which silently degrades to scalar (~4x slower) for
   anyone who builds without `-C target-cpu=native`. A published crate cannot assume that,
   so the kernels are now `#[target_feature]` functions selected by `is_x86_feature_detected!`.
-- **License**: Apache-2.0, matching the upstream Hush model. The weights are not
-  redistributed here; they remain under the model's own terms.
-- Before publishing, set `repository` in `Cargo.toml` (cargo warns without it).
+- **License**: Apache-2.0, matching the upstream Hush model. The embedded weights are the
+  [`weya-ai/hush`](https://huggingface.co/weya-ai/hush) model redistributed under its own
+  Apache-2.0 licence — the container format changes, no weight values are altered beyond the
+  int8 quantisation described above. See `LICENSE` and `NOTICE`. Not affiliated with or
+  endorsed by Weya AI.

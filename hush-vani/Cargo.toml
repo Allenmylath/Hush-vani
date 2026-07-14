@@ -3,16 +3,26 @@ name = "hush-vani"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.70"
-description = "Speech enhancement and background-speaker suppression (DeepFilterNet3-style), pure Rust with runtime-dispatched AVX2 kernels. No ONNX runtime, no BLAS."
+description = "Real-time speech enhancement and background-speaker suppression (DeepFilterNet3-style), pure Rust with runtime-dispatched AVX2 kernels. Weights included. No ONNX runtime, no BLAS."
 license = "Apache-2.0"
 readme = "README.md"
 keywords = ["audio", "speech", "denoise", "dsp", "vad"]
 categories = ["multimedia::audio", "algorithms"]
 repository = "https://github.com/Allenmylath/Hush-vani"
 
-# Ship only source. assets/ is 15 MB of weights and test fixtures, and the weights carry
-# the upstream model's license -- users generate them with tools/export_weights.py.
-include = ["src/**/*.rs", "Cargo.toml", "README.md", "LICENSE*"]
+# Source, the embedded int8 weights (2.44 MB), and the model's attribution. assets/ is the
+# f32/f16 blobs and test fixtures -- regenerate those with tools/export_weights.py.
+include = [
+    "src/**/*.rs",
+    "data/weights.bin",
+    "data/weights.txt",
+    "examples/denoise.rs",
+    "sample_raw.wav",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+]
 
 autobins = false
 
@@ -20,14 +30,15 @@ autobins = false
 default = ["cli"]
 # The `hush-vani` binary (wav I/O).
 cli = ["dep:hound"]
-# Embed the model weights (~8 MB) via hush-vani-weights; enables `Hush::bundled()`.
-bundled = ["dep:hush-vani-weights"]
+# Run the matmul kernels natively on f16 weights (requires an f16 weight file + F16C).
+# Halves resident weight memory at ~10% lower throughput: the matrices already fit in L2, so
+# there is no bandwidth to save, and vcvtph2ps competes with the FMA ports. Off by default --
+# an f16 file is widened to f32 at load and runs the f32 kernels, same arithmetic, full speed.
+f16-kernels = []
 # Verification + benchmark binaries. Need assets/; not usable from crates.io.
 devtools = ["cli"]
 
 [dependencies]
-hush-vani-core = { version = "0.1.0", path = "../hush-vani-core" }
-hush-vani-weights = { version = "0.1.0", path = "../hush-vani-weights", optional = true }
 rustfft = "6.2"
 hound = { version = "3.5", optional = true }
 
@@ -64,9 +75,5 @@ required-features = ["devtools"]
 name = "hush-features"
 path = "src/bin/features.rs"
 required-features = ["devtools"]
-
-[[example]]
-name = "bundled"
-required-features = ["bundled"]
 
 # profile.release lives in the workspace root Cargo.toml (a member's copy is ignored).

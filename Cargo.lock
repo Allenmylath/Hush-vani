@@ -19,21 +19,8 @@ name = "hush-vani"
 version = "0.1.0"
 dependencies = [
  "hound",
- "hush-vani-core",
- "hush-vani-weights",
  "rustfft",
 ]
-
-[[package]]
-name = "hush-vani-core"
-version = "0.1.0"
-dependencies = [
- "rustfft",
-]
-
-[[package]]
-name = "hush-vani-weights"
-version = "0.1.0"
 
 [[package]]
 name = "num-complex"

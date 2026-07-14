@@ -1,0 +1,31 @@
+hush-vani-weights
+
+This crate redistributes the model weights of "Hush" by Weya AI:
+
+    https://huggingface.co/weya-ai/hush
+
+The Hush model is licensed under the Apache License, Version 2.0. A copy of that
+license is included as LICENSE. You may obtain the original at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+MODIFICATIONS (per Apache-2.0 section 4(b))
+-------------------------------------------
+The weights in data/weights.bin are derived from the ONNX bundle published at the
+URL above, with two changes:
+
+  1. Container format: the ONNX initializers are flattened into a single
+     little-endian array, described by data/weights.txt. No values change.
+
+  2. Precision: values are converted from float32 to IEEE binary16 (float16),
+     halving the file from 9.12 MB to 4.56 MB. This is lossy. Measured end to
+     end, the enhanced audio differs from the float32 reference by 75.5 dB
+     SI-SDR -- above the ~67 dB ceiling a 16-bit WAV can represent, so the
+     difference is not audible in a shipped file, but it is a real change and is
+     stated here rather than implied to be exact.
+
+Full-precision float32 weights can be regenerated from the upstream ONNX bundle
+with tools/export_weights.py in the source repository.
+
+Attribution: the weights originate from Weya AI's weya-ai/hush model. This crate
+is not affiliated with or endorsed by Weya AI.

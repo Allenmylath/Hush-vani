@@ -37,7 +37,7 @@ fn dot_4acc(a: &[f32], b: &[f32]) -> f32 {
 #[inline]
 fn dot_avx2(a: &[f32], b: &[f32]) -> f32 {
     #[cfg(target_arch = "x86_64")]
-    if hush_vani_core::simd::has_avx2() {
+    if hush_vani::simd::has_avx2() {
         return unsafe { dot_avx2_impl(a, b) };
     }
     dot_1acc(a, b)

@@ -21,6 +21,6 @@ fn main() {
     println!("  avxvnni      {}", is_x86_feature_detected!("avxvnni"));
     println!("  avx512vnni   {}", is_x86_feature_detected!("avx512vnni"));
     println!("kernels:");
-    println!("  avx2 path  {}", hush_vani_core::simd::has_avx2());
-    println!("  f16 path   {}", hush_vani_core::simd::has_f16c());
+    println!("  avx2 path  {}", hush_vani::simd::has_avx2());
+    println!("  f16 path   {}", hush_vani::simd::has_f16c());
 }

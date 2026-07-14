@@ -3,7 +3,7 @@
 //! The machine throttles hard under sustained benchmarking -- untouched code measured 1.9x
 //! slower across runs. Absolute ms are meaningless here; only the paired ratio is.
 
-use hush_vani_core::nn::{axpy, grouped_linear, pointwise};
+use hush_vani::nn::{axpy, grouped_linear, pointwise};
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -124,14 +124,14 @@ unsafe fn matvec12(m: &[f32], rows: usize, k: usize, x: &[f32], out: &mut [f32])
         j += 12;
     }
     for jj in j..rows {
-        out[jj] = hush_vani_core::nn::dot(&m[jj * k..(jj + 1) * k], x);
+        out[jj] = hush_vani::nn::dot(&m[jj * k..(jj + 1) * k], x);
     }
 }
 
 /// Pack [rows,k] into 8-row panels: each 8-float chunk of k has the 8 rows contiguous,
 /// so the kernel streams one sequential run instead of 8 pointers 1 KB apart.
-fn pack8(m: &[f32], rows: usize, k: usize) -> hush_vani_core::alloc::AlignedVec {
-    let mut p = hush_vani_core::alloc::AlignedVec::zeros(rows * k);
+fn pack8(m: &[f32], rows: usize, k: usize) -> hush_vani::alloc::AlignedVec {
+    let mut p = hush_vani::alloc::AlignedVec::zeros(rows * k);
     for jb in 0..rows / 8 {
         for c in 0..k / 8 {
             for l in 0..8 {
@@ -169,8 +169,8 @@ unsafe fn matvec_packed(p: &[f32], rows: usize, k: usize, x: &[f32], out: &mut [
     }
 }
 
-fn pack_n(m: &[f32], rows: usize, k: usize, nb: usize) -> hush_vani_core::alloc::AlignedVec {
-    let mut p = hush_vani_core::alloc::AlignedVec::zeros(rows * k);
+fn pack_n(m: &[f32], rows: usize, k: usize, nb: usize) -> hush_vani::alloc::AlignedVec {
+    let mut p = hush_vani::alloc::AlignedVec::zeros(rows * k);
     for jb in 0..rows / nb {
         for c in 0..k / 8 {
             for l in 0..nb {
@@ -209,9 +209,9 @@ unsafe fn matvec_packed12(p: &[f32], rows: usize, k: usize, x: &[f32], out: &mut
 }
 
 fn matvec_ab() {
-    use hush_vani_core::alloc::AlignedVec;
-    use hush_vani_core::nn::matvec;
-    if !hush_vani_core::simd::has_avx2() {
+    use hush_vani::alloc::AlignedVec;
+    use hush_vani::nn::matvec;
+    if !hush_vani::simd::has_avx2() {
         println!("\n(no AVX2 on this CPU; skipping matvec variants)");
         return;
     }
@@ -256,10 +256,10 @@ fn matvec_ab() {
 /// Prediction: f16 is bad on the matvec, ~neutral on the GEMM. If that holds, the mechanism
 /// is conversion throughput, not memory bandwidth.
 fn f16_ab() {
-    use hush_vani_core::alloc::AlignedVec;
-    use hush_vani_core::nn::{gemm_nt, gemm_nt_f16, matvec_packed, matvec_packed_f16,
+    use hush_vani::alloc::AlignedVec;
+    use hush_vani::nn::{gemm_nt, gemm_nt_f16, matvec_packed, matvec_packed_f16,
                              pack_rows, pack_rows_f16, to_f16_vec};
-    if !hush_vani_core::simd::has_f16c() {
+    if !hush_vani::simd::has_f16c() {
         println!("\n(no F16C; skipping)");
         return;
     }
@@ -365,8 +365,8 @@ unsafe fn matvec_packed_i8(
 
 #[cfg(target_arch = "x86_64")]
 fn int8_ab() {
-    use hush_vani_core::alloc::AlignedVec;
-    use hush_vani_core::nn::{matvec_packed, pack_rows};
+    use hush_vani::alloc::AlignedVec;
+    use hush_vani::nn::{matvec_packed, pack_rows};
     if !std::arch::is_x86_feature_detected!("avxvnni") {
         println!("\n(no AVX-VNNI; skipping int8)");
         return;
@@ -375,7 +375,7 @@ fn int8_ab() {
 
     // Use a REAL recurrent matrix: synthetic data is well-behaved and flatters int8, while
     // the actual weights carry the +/-31 outliers that wreck a single per-tensor scale.
-    let real = hush_vani_core::Weights::from_paths(
+    let real = hush_vani::Weights::from_paths(
         concat!(env!("CARGO_MANIFEST_DIR"), "/assets/weights.bin"),
         concat!(env!("CARGO_MANIFEST_DIR"), "/assets/weights.txt"),
     )

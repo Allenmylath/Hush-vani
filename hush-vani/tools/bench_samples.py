@@ -4,6 +4,12 @@ The samples are 48 kHz; Hush is a 16 kHz model, so they are resampled to 16 kHz 
 (That also means these outputs are NOT comparable to DeepFilterNet2's own 48 kHz full-band
 results -- different model, different bandwidth. The point here is the three precisions
 against each other on real, varied noise.)
+
+Each precision is read from its real blob by the Rust loader. Build them first:
+
+    python tools/export_weights.py                       # assets/weights.{bin,txt}
+    python tools/export_weights.py --f16  --out weights.f16
+    python tools/export_weights.py --int8 --out weights.int8
 """
 import json
 import os
@@ -28,35 +34,23 @@ DELAY = 160
 PRECS = ("f32", "f16", "int8")
 
 
-def tensors(man):
-    for line in open(man):
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        head, off, n = line.rsplit(" ", 2)
-        name, _ = head.rsplit(" ", 1)
-        yield name, int(off), int(n)
-
-
 def build_weight_dirs():
-    """f32 / f16 / int8(simulated by quantise+dequantise) weight dirs."""
+    """One dir per precision, each holding the REAL blob that ships for it.
+
+    int8 used to be simulated here by quantising and dequantising back to f32 in numpy, then
+    running the f32 kernels. That measured a scheme, not a crate. Every precision now goes
+    through its actual on-disk blob and the Rust loader, so what is measured is what ships.
+    """
     dirs = {p: os.path.join(BS, "_w", p) for p in PRECS}
-    for d in dirs.values():
+    src = {"f32": "weights", "f16": "weights.f16", "int8": "weights.int8"}
+    for p, d in dirs.items():
         os.makedirs(d, exist_ok=True)
-    f32b, f32t = os.path.join(ASSETS, "weights.bin"), os.path.join(ASSETS, "weights.txt")
-    shutil.copy(f32b, os.path.join(dirs["f32"], "weights.bin"))
-    shutil.copy(f32t, os.path.join(dirs["f32"], "weights.txt"))
-    shutil.copy(os.path.join(ASSETS, "weights.f16.bin"), os.path.join(dirs["f16"], "weights.bin"))
-    shutil.copy(os.path.join(ASSETS, "weights.f16.txt"), os.path.join(dirs["f16"], "weights.txt"))
-    raw = np.fromfile(f32b, dtype="<f4")
-    q = raw.copy()
-    for _n, off, n in tensors(f32t):
-        seg = raw[off:off + n]
-        a = np.abs(seg).max()
-        s = a / 127.0 if a > 0 else 1.0
-        q[off:off + n] = np.clip(np.round(seg / s), -127, 127) * s
-    q.astype("<f4").tofile(os.path.join(dirs["int8"], "weights.bin"))
-    shutil.copy(f32t, os.path.join(dirs["int8"], "weights.txt"))
+        for ext in ("bin", "txt"):
+            s = os.path.join(ASSETS, f"{src[p]}.{ext}")
+            if not os.path.exists(s):
+                sys.exit(f"missing {s} -- run: python tools/export_weights.py "
+                         f"{'--' + p if p != 'f32' else ''} --out {src[p]}")
+            shutil.copy(s, os.path.join(d, f"weights.{ext}"))
     return dirs
 
 

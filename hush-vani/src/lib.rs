@@ -7,22 +7,24 @@
 //! Output matches the reference ONNX Runtime pipeline to float32 rounding
 //! (SI-SDR 129.7 dB end-to-end).
 //!
-//! # Crate layout
-//!
-//! This crate holds the **decoders** and the top-level [`Hush`] enhancer, which merges the
-//! decoder outputs (ERB mask + deep filter) and synthesises audio. The **encoder** and all
-//! shared DSP / neural kernels live in [`hush_vani_core`], re-exported here as needed.
-//!
 //! # Example
+//!
+//! The weights are **built in** — nothing to download, export, or ship alongside your binary:
 //!
 //! ```no_run
 //! use hush_vani::Hush;
 //!
-//! let hush = Hush::from_paths("weights.bin", "weights.txt")?;
-//! let noisy: Vec<f32> = vec![0.0; 16_000]; // 1 s of 16 kHz mono, in [-1, 1]
+//! let hush = Hush::new()?;                  // weights embedded in the crate
+//! let noisy: Vec<f32> = vec![0.0; 16_000];  // 1 s of 16 kHz mono, in [-1, 1]
 //! let clean = hush.enhance(&noisy)?;
 //! # Ok::<(), hush_vani::Error>(())
 //! ```
+//!
+//! # Crate layout
+//!
+//! [`Hush`] is the whole API. Below it, and public for reuse: [`dsp`] (STFT, ERB features,
+//! ISTFT), [`nn`] (dot / matvec / GEMM, convolutions, GRU — AVX2+FMA chosen at **runtime**,
+//! with a portable scalar fallback), [`Encoder`], [`Decoders`], and the [`Weights`] arena.
 //!
 //! # Audio format
 //!
@@ -36,10 +38,25 @@
 //!
 //! # Weights
 //!
-//! Weights are **not** bundled (9 MB, and they carry the upstream model's license). Generate
-//! `weights.bin` + `weights.txt` from the published ONNX bundle with the `export_weights.py`
-//! script in the repository, then load them with [`Hush::from_paths`] or
-//! [`Hush::from_bytes`] (e.g. via `include_bytes!`).
+//! The [`weya-ai/hush`](https://huggingface.co/weya-ai/hush) weights are embedded in the
+//! crate (Apache-2.0, see `NOTICE`), quantised to **int8**: 2.44 MB, against 4.56 MB for
+//! float16 and 9.12 MB for the original float32.
+//!
+//! int8 here is a **storage format, not a compute format** — the weights are dequantised to
+//! f32 at load and run through the same f32 kernels, so it is neither faster nor slower.
+//! What it buys is size, and it costs nothing in the thing the model is for: on six real
+//! recordings it removes **+43.4 dB of noise, exactly matching full f32 weights**. It sits
+//! 44.0 dB SI-SDR from the f32 output (an error level of −72.4 dBFS), which is inaudible at
+//! any normal listening level but, unlike f16 (−94.6 dBFS), not literally below what a
+//! 16-bit WAV can store.
+//!
+//! Each group of 64 weights along a matmul row carries its own scale. One scale per *tensor*
+//! — the obvious first thing to try — has to cover the GRUs' ±31 outliers alongside the 99%
+//! of weights inside ±0.23, and that model removes 2.1 dB *less* noise than f32 (8.4 dB
+//! worse on one sample). The block scales cost 159 KB and give all of it back.
+//!
+//! To use different weights, export them with `tools/export_weights.py` (`--f16`, or neither
+//! flag for f32) and load with [`Hush::from_paths`] or [`Hush::from_bytes`].
 //!
 //! # Performance
 //!
@@ -55,17 +72,41 @@
 
 #![warn(missing_docs)]
 
-mod decoders;
+// Low-level reuse surface: documented at the module level, but individual kernels and
+// constants are not forced to carry doc comments -- they are power-user API, not the
+// curated one.
+#[allow(missing_docs)]
+pub mod alloc;
+#[allow(missing_docs)]
+pub mod dsp;
+#[allow(missing_docs)]
+pub mod nn;
+#[allow(missing_docs)]
+pub mod simd;
+#[allow(missing_docs)]
+pub mod weights;
 
+pub mod bank;
+pub mod decoders;
+pub mod encoder;
+mod error;
+
+pub use bank::WeightBank;
 pub use decoders::Decoders;
-pub use hush_vani_core::encoder::{EncOut, Encoder};
-pub use hush_vani_core::Error;
+pub use encoder::{EncOut, Encoder};
+pub use error::Error;
+pub use weights::Weights;
 
-use hush_vani_core::dsp::{self, Dsp, FREQS, HOP, NB_DF};
-use hush_vani_core::Weights;
+use dsp::{Dsp, FREQS, HOP, NB_DF};
 use rustfft::num_complex::Complex32;
 use std::path::Path;
 use std::sync::Arc;
+
+/// The embedded int8 weight blob: payload followed by a table of f32 block scales.
+const WEIGHTS_BIN: &[u8] = include_bytes!("../data/weights.bin");
+
+/// The manifest describing [`WEIGHTS_BIN`].
+const MANIFEST: &str = include_str!("../data/weights.txt");
 
 /// A loaded Hush model, ready to enhance audio.
 ///
@@ -105,22 +146,17 @@ impl Hush {
         Self::build(Weights::from_paths(bin, manifest)?)
     }
 
-    /// Load the weights embedded by the `hush-vani-weights` crate.
+    /// Load the model. The weights are embedded in the crate — no files, no export script.
     ///
-    /// The simplest way to get a working model — no files, no export script. Requires the
-    /// `bundled` feature, which embeds ~8 MB of weights into your binary:
-    ///
-    /// ```toml
-    /// hush-vani = { version = "0.1", features = ["bundled"] }
-    /// ```
-    #[cfg(feature = "bundled")]
-    pub fn bundled() -> Result<Self, Error> {
-        Self::from_bytes(hush_vani_weights::WEIGHTS_BIN, hush_vani_weights::MANIFEST)
+    /// This is the one you want. See the [crate docs](crate#weights) for what the embedded
+    /// int8 weights cost (in short: 2.44 MB, and nothing measurable in noise removal).
+    pub fn new() -> Result<Self, Error> {
+        Self::from_bytes(WEIGHTS_BIN, MANIFEST)
     }
 
     /// True if this build will use the AVX2 + FMA kernels on this CPU.
     pub fn is_accelerated() -> bool {
-        hush_vani_core::simd::has_avx2()
+        simd::has_avx2()
     }
 
     /// Enhance a mono 16 kHz signal. Full suppression; see [`Hush::enhance_with`] to limit it.

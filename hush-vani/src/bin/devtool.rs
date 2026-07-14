@@ -2,8 +2,8 @@
 //! Requires `assets/` (weights + fixtures); not shipped in the published crate.
 
 use hush_vani::{Decoders, Encoder, Hush};
-use hush_vani_core::dsp::*;
-use hush_vani_core::Weights;
+use hush_vani::dsp::*;
+use hush_vani::Weights;
 use rustfft::num_complex::Complex32;
 use std::sync::Arc;
 use std::time::Instant;

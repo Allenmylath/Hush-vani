@@ -27,3 +27,13 @@ bench_samples/f32/
 bench_samples/f16/
 bench_samples/int8/
 bench_samples/samples.html
+
+# The same third-party demo audio, collated for listening by tools/organize_audio.py.
+# Same reason: not ours to redistribute.
+audio/
+
+# Scratch output of the int8 quantisation experiments (tools/quant_schemes.py).
+quant_schemes/
+
+# Written by `cargo run --example denoise`.
+hush-vani/sample_enhanced.wav

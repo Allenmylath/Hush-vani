@@ -4,19 +4,14 @@ A from-scratch Rust implementation of the [Hush](https://huggingface.co/weya-ai/
 enhancement model (a DeepFilterNet3 derivative), and the ONNX Runtime reference pipeline it
 was validated against.
 
-A Cargo workspace of two crates, plus the reference pipeline they were validated against:
+**One crate, weights included.**
 
 | directory | crate | what |
 |---|---|---|
-| [`hush-vani-core/`](hush-vani-core/) | `hush-vani-core` | shared DSP + neural kernels + the **encoder** (first stage) |
-| [`hush-vani/`](hush-vani/) | `hush-vani` | the **decoders** (second stage), the merge, and the `Hush` API — the crate users install |
-| [`hush-vani-weights/`](hush-vani-weights/) | `hush-vani-weights` | the model weights as an embeddable data blob (Apache-2.0, from weya-ai/hush) |
+| [`hush-vani/`](hush-vani/) | `hush-vani` | the whole thing: DSP, kernels, encoder, decoders, the `Hush` API, and the embedded int8 weights |
 | [`ort/`](ort/) | — | the reference: Python + `onnxruntime`, bit-accurate against the model author's published audio |
 
-`hush-vani` depends on `hush-vani-core`. The split follows the model: the encoder produces a
-shared embedding that both decoders consume, so it is a clean, dependency-free first stage.
-`hush-vani-weights` is a standalone data crate, pulled in only when you enable the `bundled`
-feature. Everything is runtime-dispatched AVX2, no ONNX runtime, no BLAS.
+Runtime-dispatched AVX2, no ONNX runtime, no BLAS, no Python at inference.
 
 The Rust output matches the ONNX Runtime pipeline to float32 rounding (**SI-SDR 129.7 dB**),
 and is faster: **1.07x on the neural network**, 1.12x on the full pipeline, single-threaded,
@@ -26,37 +21,31 @@ for the numbers and how they were obtained.
 On the reference clip the model drops the noise floor by **42 dB** while costing speech only
 −3.4 dB, at ~110x realtime on one core (5 s of audio in ~45 ms).
 
-## Quick start (the crate)
-
-Easiest — embed the weights, no files to manage:
+## Quick start
 
 ```toml
 [dependencies]
-hush-vani = { version = "0.1", features = ["bundled"] }
+hush-vani = "0.1"
 ```
-
-```rust
-let hush = hush_vani::Hush::bundled()?;      // ~4.6 MB of f16 weights baked into the binary
-let clean = hush.enhance(&noisy)?;           // mono 16 kHz f32 in [-1, 1]
-```
-
-The bundled weights are **float16** — half the size, widened to f32 at load, so no speed cost.
-Output differs from full-f32 weights by 75.5 dB SI-SDR, above what a 16-bit WAV can represent.
-For bit-exactness against onnxruntime (129.7 dB), export f32 weights and use `from_paths`.
-
-Or load weights from a file at runtime (no `bundled` feature, smaller binary):
 
 ```rust
 use hush_vani::Hush;
-let hush = Hush::from_paths("weights.bin", "weights.txt")?;
-let clean = hush.enhance(&noisy)?;
+
+let hush = Hush::new()?;             // weights are embedded — nothing to download
+let clean = hush.enhance(&noisy)?;   // mono 16 kHz f32 in [-1, 1]
 # Ok::<(), hush_vani::Error>(())
 ```
 
+The embedded weights are **int8** — 2.44 MB, a quarter of the original f32. They are
+dequantised to f32 at load and run through the f32 kernels, so int8 is a storage format, not
+a compute one: same speed, and on six real recordings it removes **+43.4 dB of noise, exactly
+matching full f32 weights**. See [the weights section](hush-vani/README.md#weights) for what
+it does cost (a −72.4 dBFS noise floor) and how the block scales were chosen.
+
 ## Setting up this repo
 
-Two things are deliberately **not** vendored here: the model weights (they belong to
-`weya-ai/hush`) and the ONNX bundle they are derived from. Fetch and convert them:
+Two things are deliberately **not** vendored here: the f32/f16 weight blobs and the ONNX
+bundle they are derived from. (The int8 blob *is* vendored — it is what the crate ships.)
 
 ```bash
 # 1. the published ONNX bundle -> ort/bundle/
@@ -65,9 +54,11 @@ curl -L -o ort/onnx.tar.gz \
   https://huggingface.co/weya-ai/hush/resolve/main/onnx/advanced_dfnet16k_model_best_onnx.tar.gz
 tar -xzf ort/onnx.tar.gz -C ort/bundle
 
-# 2. flat f32 weight arena for the Rust crate -> hush-vani/assets/
+# 2. weight blobs -> hush-vani/assets/
 pip install onnx numpy soundfile onnxruntime deepfilterlib
-python hush-vani/tools/export_weights.py
+python hush-vani/tools/export_weights.py                       # f32,  9.12 MB
+python hush-vani/tools/export_weights.py --f16  --out weights.f16
+python hush-vani/tools/export_weights.py --int8 --out weights.int8   # what ships
 
 # 3. (optional) ORT intermediates, so `hush-devtool verify` can check every tensor
 python hush-vani/tools/export_fixtures.py
@@ -76,20 +67,19 @@ python hush-vani/tools/export_fixtures.py
 Then:
 
 ```bash
-cd hush-vani
 cargo build --release --features devtools
 ./target/release/hush-devtool verify        # vs ORT + libdf, tensor by tensor
-./target/release/hush-vani sample_raw.wav clean.wav --weights ./assets
+./target/release/hush-vani hush-vani/sample_raw.wav clean.wav
 ```
 
 ## Benchmarks
 
 ```bash
-cd hush-vani
-./target/release/hush-devtool bench 5   # 1 and 2 threads
-python tools/ab_bench.py                # paired, interleaved, Rust vs onnxruntime
-./target/release/hush-kernel-ab         # paired old-vs-new kernel A/B
-./target/release/hush-profile           # per-kernel GFMA/s
+./target/release/hush-devtool bench 5           # 1 and 2 threads
+python hush-vani/tools/ab_bench.py              # paired, interleaved, Rust vs onnxruntime
+python hush-vani/tools/bench_samples.py         # f32/f16/int8 over 6 real recordings
+./target/release/hush-kernel-ab                 # paired old-vs-new kernel A/B
+./target/release/hush-profile                   # per-kernel GFMA/s
 ```
 
 Timing on this class of machine drifts ~20% between sessions, which is larger than the
@@ -100,22 +90,15 @@ answer during development; the write-up records those cases.
 
 ## Publishing
 
-Three crates, published in dependency order. `cargo publish` resolves every declared
-dependency (including optional ones) against crates.io, so the leaves go first and
-`hush-vani` — which depends on both — goes last:
+One crate, no dependency ordering to worry about:
 
 ```bash
-cargo publish -p hush-vani-core      # no dependencies
-cargo publish -p hush-vani-weights   # no dependencies (pure data, ~8 MB)
-cargo publish -p hush-vani           # depends on both; publish after they are live
+cargo publish -p hush-vani --dry-run    # check it packages (2.3 MB compressed)
+cargo publish -p hush-vani
 ```
-
-`hush-vani-core` and `hush-vani-weights` are independent and can go in either order. Wait a
-few seconds for each to index before the next. Confirm the names are free first with
-`cargo publish -p hush-vani-core --dry-run` (the dry-run on `hush-vani` will report its
-unpublished deps as "not found" — expected until the leaves are live).
 
 ## Licence
 
-Apache-2.0, matching the upstream model. The weights are not redistributed here and remain
-under the terms of [`weya-ai/hush`](https://huggingface.co/weya-ai/hush).
+Apache-2.0, matching the upstream model. The embedded weights are the
+[`weya-ai/hush`](https://huggingface.co/weya-ai/hush) model redistributed under its own
+Apache-2.0 licence; see `hush-vani/NOTICE`. Not affiliated with or endorsed by Weya AI.

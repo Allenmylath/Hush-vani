@@ -4,11 +4,11 @@
 //! deep-filter decoder produces order-5 complex filter coefficients. Merging them into an
 //! enhanced spectrum is done by the caller (see [`crate::Hush::enhance`]).
 
-use hush_vani_core::bank::{WeightBank, HIDDEN};
-use hush_vani_core::dsp::{NB_DF, NB_ERB};
-use hush_vani_core::nn::*;
-use hush_vani_core::simd::{sigmoid_slice, tanh_slice};
-use hush_vani_core::{EncOut, Error, Weights};
+use crate::bank::{WeightBank, HIDDEN};
+use crate::dsp::{NB_DF, NB_ERB};
+use crate::nn::*;
+use crate::simd::{sigmoid_slice, tanh_slice};
+use crate::{EncOut, Error, Weights};
 use std::sync::Arc;
 
 /// Tensors the decoders read. Validated once at construction.

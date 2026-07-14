@@ -1,6 +1,6 @@
 ﻿//! Where does NN time actually go? Times each kernel at the shapes the model uses.
-use hush_vani_core::alloc::AlignedVec;
-use hush_vani_core::nn::*;
+use hush_vani::alloc::AlignedVec;
+use hush_vani::nn::*;
 use std::hint::black_box;
 use std::time::Instant;
 
