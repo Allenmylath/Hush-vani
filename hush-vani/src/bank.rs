@@ -17,7 +17,8 @@
 use crate::alloc::{AlignedU16, AlignedVec};
 use crate::error::Error;
 use crate::nn::{
-    grouped_linear, grouped_linear_f16, gru, gru_f16, pack_rows, pack_rows_f16, to_f16_vec, PANEL,
+    gate_update, gemm_nt, gemm_nt_f16, grouped_linear, grouped_linear_f16, gru, gru_f16, matvec_packed,
+    matvec_packed_f16, pack_rows, pack_rows_f16, to_f16_vec, PANEL,
 };
 use crate::simd::has_f16c;
 use crate::weights::Weights;
@@ -130,6 +131,33 @@ impl WeightBank {
             (Mat::F32(w), Mat::F32(r)) => gru(x, t, i, w, r, b, HIDDEN),
             _ => unreachable!("W and R precision must match"),
         }
+    }
+
+    /// One step of the GRU [`gru`](Self::gru) names, from hidden state `h` (updated in place):
+    /// the same kernels and summation order as a whole sequence, for streaming.
+    pub fn gru_step(&self, x: &[f32], i: usize, prefix: &str, ids: (&str, &str, &str), h: &mut AlignedVec) {
+        let h3 = 3 * HIDDEN;
+        let wn = format!("{prefix}/{}", ids.0);
+        let rn = format!("{prefix}/{}", ids.1);
+        let b = self.t(&format!("{prefix}/{}", ids.2));
+        let w = self.mats.get(&wn).unwrap_or_else(|| panic!("missing GRU W {wn}"));
+        let r = self.packed.get(&rn).unwrap_or_else(|| panic!("missing GRU R {rn}"));
+        let mut xa = AlignedVec::zeros(i);
+        xa.copy_from_slice(x);
+        let mut xw = AlignedVec::zeros(h3);
+        let mut hr = AlignedVec::zeros(h3);
+        match (w, r) {
+            (Mat::F16(w), Mat::F16(r)) => {
+                gemm_nt_f16(&xa, 1, i, w, h3, &b[..h3], &mut xw);
+                matvec_packed_f16(r, h3, HIDDEN, h, &mut hr);
+            }
+            (Mat::F32(w), Mat::F32(r)) => {
+                gemm_nt(&xa, 1, i, w, h3, &b[..h3], &mut xw);
+                matvec_packed(r, h3, HIDDEN, h, &mut hr);
+            }
+            _ => unreachable!("W and R precision must match"),
+        }
+        gate_update(&xw, &hr, &b[h3..], h, HIDDEN);
     }
 
     /// True if this bank is holding its matmul weights as f16.

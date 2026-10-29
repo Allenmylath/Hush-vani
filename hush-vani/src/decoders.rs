@@ -57,6 +57,11 @@ pub struct Decoders {
 }
 
 impl Decoders {
+    /// Access to the underlying weight bank, for the streaming driver.
+    pub(crate) fn bank(&self) -> &WeightBank {
+        &self.bank
+    }
+
     /// Build the decoders from shared weights, validating and packing what they need.
     pub fn new(weights: Arc<Weights>) -> Result<Self, Error> {
         Ok(Decoders { bank: WeightBank::new(weights, &REQUIRED, &MATS, &GRU_R)? })

@@ -486,7 +486,7 @@ pub fn grouped_linear(x: &[f32], t: usize, g: usize, i: usize, h: usize, w: &[f3
 
 /// z = sig(xw_z + hr_z + rb_z); r = sig(xw_r + hr_r + rb_r)
 /// hh = tanh(xw_h + r * (hr_h + rb_h)); h = (1-z)*hh + z*h
-fn gate_update(xwt: &[f32], hr: &[f32], rb: &[f32], h: &mut [f32], hs: usize) {
+pub(crate) fn gate_update(xwt: &[f32], hr: &[f32], rb: &[f32], h: &mut [f32], hs: usize) {
     #[cfg(target_arch = "x86_64")]
     if has_avx2() && crate::alloc::is_aligned32(hr.as_ptr()) && crate::alloc::is_aligned32(h.as_ptr()) {
         unsafe { x86::gate_update(xwt, hr, rb, h, hs) };

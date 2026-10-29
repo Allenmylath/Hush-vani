@@ -67,8 +67,9 @@
 //! # Streaming
 //!
 //! [`Hush::enhance`] processes a whole utterance: the GRUs start from zero state each call,
-//! so feeding successive chunks would restart the recurrence and degrade output. A streaming
-//! API is not yet exposed.
+//! so feeding successive chunks would restart the recurrence and degrade output. For live
+//! audio use [`HushStream`]: 10 ms frames in, the same output as `enhance` out, with the
+//! model's state carried from frame to frame.
 
 #![warn(missing_docs)]
 
@@ -90,11 +91,13 @@ pub mod bank;
 pub mod decoders;
 pub mod encoder;
 mod error;
+pub mod stream;
 
 pub use bank::WeightBank;
 pub use decoders::Decoders;
 pub use encoder::{EncOut, Encoder};
 pub use error::Error;
+pub use stream::HushStream;
 pub use weights::Weights;
 
 use dsp::{Dsp, FREQS, HOP, NB_DF};

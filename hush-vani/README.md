@@ -95,12 +95,22 @@ threads — each call allocates its own DSP state.
 `Error::MissingTensor` (a malformed or mismatched weight blob — you cannot hit these with
 `Hush::new()`).
 
-## No streaming yet
+## Streaming
 
-`enhance()` processes a **whole utterance**. The GRUs start from zero state on every call,
-so feeding it successive chunks of a live stream would restart the recurrence each time and
-degrade the output badly. Buffer the utterance, or wait for a streaming API — the GRU state
-is already held in the right place, so it is a small change, just not one that's exposed.
+`enhance()` processes a **whole utterance**: the GRUs and the STFT's normalisation start from
+scratch on every call, so feeding it successive chunks of a live stream degrades the output
+badly. For live audio use `HushStream`, which runs one 10 ms frame at a time and carries the
+model's state between frames. Its output matches `enhance()` over the same audio to float
+rounding, with the same 160-sample lag:
+
+```rust
+use hush_vani::{Hush, HushStream};
+use std::sync::Arc;
+
+let hush = Arc::new(Hush::new()?);                 // the weights; share between streams
+let mut stream = HushStream::new(Arc::clone(&hush));
+let clean = stream.process(&chunk);                // any length in; whole frames out
+```
 
 ## Performance
 
